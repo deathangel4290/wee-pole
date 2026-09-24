@@ -1,7 +1,8 @@
 name: Test & deploy
 
-# Runs the tests on every push. Pushes to the default branch are also published
-# to GitHub Pages (enable it first: Settings -> Pages -> Source: GitHub Actions).
+# Runs the tests on every push. Pushes to the default branch of a *public* repo are
+# also published to GitHub Pages (enable it first: Settings -> Pages -> Source:
+# GitHub Actions). Private repos skip the deploy, since free Pages needs a public repo.
 on:
   push:
   pull_request:
@@ -22,7 +23,10 @@ jobs:
 
   deploy:
     needs: test
-    if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.ref_name == github.event.repository.default_branch &&
+      !github.event.repository.private
     runs-on: ubuntu-latest
     permissions:
       pages: write

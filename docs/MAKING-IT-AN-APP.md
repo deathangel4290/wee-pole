@@ -14,8 +14,8 @@ BOARD//BOX is a **Progressive Web App (PWA)**: a website that can be installed o
 
 The repo already has everything: app icons, a manifest, an offline service worker, and a GitHub Actions workflow (`.github/workflows/deploy.yml`). The workflow runs the tests and publishes the site every time you push to the default branch.
 
-1. **Make sure the repo is public.** GitHub Pages is free for public repos. Private repos need a paid plan.
-   *GitHub → repo → Settings → General → Danger Zone → Change visibility.*
+1. **Make the repo public.** GitHub Pages is free for public repos. While the repo is private, the workflow still runs the tests but skips the deploy.
+   *GitHub → repo → Settings → General → Danger Zone → Change visibility → Public.*
 2. **Turn on Pages with GitHub Actions as the source.**
    *Settings → Pages → Build and deployment → Source: **GitHub Actions**.*
 3. **Run the deploy.** Push any commit to the default branch, or open the *Actions* tab, choose **Test & deploy**, and click **Run workflow**.
