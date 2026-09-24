@@ -29,6 +29,7 @@ jobs:
       !github.event.repository.private
     runs-on: ubuntu-latest
     permissions:
+      contents: read # job-level permissions replace the workflow's, so keep read access for checkout
       pages: write
       id-token: write
     concurrency:
