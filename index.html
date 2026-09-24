@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b0c">
+  <meta name="description" content="BOARD//BOX — one app, every game. Quick board and arcade games for your phone.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>BOARD//BOX</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- Core first, then each game registers itself, then the shell boots. -->
+  <script src="js/core.js"></script>
+  <script src="js/games/tictactoe.js"></script>
+  <script src="js/games/connect4.js"></script>
+  <script src="js/games/g2048.js"></script>
+  <script src="js/games/minesweeper.js"></script>
+  <script src="js/games/snake.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

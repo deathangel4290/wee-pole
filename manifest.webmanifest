@@ -1,0 +1,14 @@
+{
+  "name": "BOARD//BOX",
+  "short_name": "BOARD//BOX",
+  "description": "One app. Every game.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0b0c",
+  "theme_color": "#0b0b0c",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
