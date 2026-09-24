@@ -9,6 +9,7 @@
  *   #/play/<id>     a game
  *   #/daily/<kind>  today's daily challenge
  *   #/profile       stats + achievements
+ *   #/online, #/friends, #/leaderboard, #/match/<id>   online screens (js/online.js)
  */
 (() => {
   const { el } = BB;
@@ -56,6 +57,8 @@
       setTimeout(() => { t.remove(); nextToast(); }, 250);
     }, item[1] === 'achievement' ? 2800 : 2000);
   }
+
+  BB.toast = toast;
 
   function announce(unlocked) {
     for (const a of unlocked) toast(`🏆 ${a.icon} ${a.name}`, 'achievement');
@@ -155,6 +158,9 @@
 
     const pick = dailyPick();
     const { played, wins } = BB.totals();
+    // Filled in by js/online.js only if a server is reachable.
+    const onlineSlot = el('div', { class: 'online-slot' });
+    if (BB.onlineHomeCard) BB.onlineHomeCard(onlineSlot);
     const achieved = BB.achievements.filter((a) => BB.isUnlocked(a.id)).length;
 
     const featured = el('a', { class: 'featured', href: `#/play/${pick.id}` },
@@ -197,6 +203,7 @@
       ),
       el('main', { class: 'home' },
         dailyCard(),
+        onlineSlot,
         roulette,
         featured,
         el('h2', { class: 'section-title' }, 'QUICK GAMES'),
@@ -366,6 +373,7 @@
    * towards; `daily` is set for daily challenges.
    */
   function renderPlayable({ title, icon, statsId, mount, daily = null }) {
+    rouletteRun = daily || !rouletteRun || rouletteRun.id !== statsId ? null : rouletteRun;
     teardown();
     document.title = `${title} · BOARD//BOX`;
 
@@ -380,7 +388,6 @@
     app.replaceChildren(head, el('main', { class: 'game-screen' }, status, toolbar, stage));
 
     if (!daily && rouletteRun && rouletteRun.id === statsId) startRunTimer(timer);
-    else rouletteRun = null;
 
     const api = {
       toolbar,
@@ -397,13 +404,29 @@
         if (!daily) return null;
         const out = BB.updateDaily(daily.kind, fn, daily.date);
         announce(out.unlocked);
+        if (BB.net) BB.net.submitDaily(daily.date, daily.kind, out.entry); // leaderboards
         return out.entry;
       },
     };
 
     unmountGame = mount(stage, api, daily ? { daily } : {}) || null;
     window.scrollTo(0, 0);
+    return api;
   }
+
+  // What the online screens (js/online.js) get to build with.
+  const onlineCtx = {
+    app,
+    header,
+    toast,
+    route: () => route(),
+    renderPlayable,
+    setCleanup: (fn) => { unmountGame = fn; },
+    addCleanup: (fn) => {
+      const prev = unmountGame;
+      unmountGame = () => { if (prev) prev(); fn(); };
+    },
+  };
 
   function startRunTimer(timer) {
     timer.hidden = false;
@@ -446,8 +469,13 @@
       });
       return;
     }
-    if (hash.startsWith('#/profile')) renderProfile();
-    else renderHome();
+    if (hash.startsWith('#/profile')) { renderProfile(); return; }
+    if (BB.onlineRoute) {
+      teardown();
+      rouletteRun = null;
+      if (BB.onlineRoute(hash, onlineCtx)) return;
+    }
+    renderHome();
   }
 
   window.addEventListener('hashchange', route);

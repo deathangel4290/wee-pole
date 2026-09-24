@@ -6,7 +6,7 @@ BB.register({
   icon: '⚫',
   tagline: 'Outflank. Flip. Take the board.',
 
-  mount(stage, api) {
+  mount(stage, api, opts = {}) {
     const { el } = BB;
     const N = 8;
     const DIRS = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
@@ -21,7 +21,10 @@ BB.register({
     const DEPTH = { medium: 2, hard: 4 };
     const WIN = 1e6;
 
-    let mode = 'medium'; // 'easy' | 'medium' | 'hard' | '2p'
+    // Online: orange is seat 0. Passes are explicit 'pass' moves so turns strictly alternate.
+    const net = BB.onlineGame(opts.online, api);
+    let mode = net ? 'online' : 'medium'; // 'easy' | 'medium' | 'hard' | '2p' | 'online'
+    let passTimer = null;
     let board; // Int8Array(64): 0 empty, 1 orange (moves first), 2 white / bot
     let turn;
     let over;
@@ -129,7 +132,8 @@ BB.register({
     const p2Label = el('span', null, 'BOT');
 
     function render(flipped = []) {
-      const hints = !over && !busy && (mode === '2p' || turn === 1) ? new Set(movesFor(board, turn).map((m) => m.i)) : new Set();
+      const humanToMove = net ? net.myTurn(turn - 1) : mode === '2p' || turn === 1;
+      const hints = !over && !busy && humanToMove ? new Set(movesFor(board, turn).map((m) => m.i)) : new Set();
       for (let i = 0; i < N * N; i++) {
         const cell = grid.at(Math.floor(i / N), i % N);
         cell.classList.toggle('hint', hints.has(i));
@@ -156,6 +160,18 @@ BB.register({
       lastMove = move.i;
       const flipped = move.flips;
       const next = 3 - turn;
+      if (net) {
+        if (!movesFor(board, next).length && !movesFor(board, turn).length) {
+          over = true;
+          render(flipped);
+          finish();
+          return;
+        }
+        turn = next; // even if they must pass: they send an explicit 'pass'
+        render(flipped);
+        api.status(onlineStatus());
+        return;
+      }
       if (movesFor(board, next).length) {
         turn = next;
       } else if (movesFor(board, turn).length) {
@@ -184,8 +200,47 @@ BB.register({
       }, 450);
     }
 
+    const onlineStatus = () => `${net.turnText(turn - 1)} · you’re ${net.seat === 0 ? 'orange' : 'white'}`;
+    let winnerSeat;
+
+    // Apply a move from the match history or from the opponent.
+    function applyNet(m) {
+      if (over) return;
+      if (m === 'pass') {
+        turn = 3 - turn;
+        render();
+        api.status(onlineStatus());
+      } else {
+        const flips = flipsFor(board, m, turn);
+        if (flips.length) place({ i: m, flips });
+      }
+      autoPass();
+    }
+
+    // With no legal move on our turn, pass automatically.
+    function autoPass() {
+      if (over || passTimer || !net.myTurn(turn - 1) || movesFor(board, turn).length) return;
+      api.toast('You have no moves — passing');
+      passTimer = setTimeout(() => {
+        passTimer = null;
+        if (over || !net.myTurn(turn - 1)) return;
+        turn = 3 - turn;
+        render();
+        api.status(onlineStatus());
+        net.send('pass');
+      }, 900);
+    }
+
     function humanMove(i) {
       if (over || busy) return;
+      if (net) {
+        if (!net.myTurn(turn - 1)) return;
+        const flips = flipsFor(board, i, turn);
+        if (!flips.length) return;
+        place({ i, flips });
+        net.send(i, over ? winnerSeat : undefined);
+        return;
+      }
       if (mode !== '2p' && turn !== 1) return;
       const flips = flipsFor(board, i, turn);
       if (!flips.length) return;
@@ -196,6 +251,11 @@ BB.register({
       const a = count(board, 1);
       const b = count(board, 2);
       const tally = `${a}–${b}`;
+      if (net) {
+        winnerSeat = a > b ? 0 : b > a ? 1 : null;
+        api.status(`${net.finish(winnerSeat)} (${tally})`);
+        return;
+      }
       if (mode === '2p') {
         api.status(a === b ? `Draw, ${tally}.` : `${name(a > b ? 1 : 2)} wins ${tally}!`);
         api.record('done');
@@ -213,21 +273,38 @@ BB.register({
       over = false;
       busy = false;
       lastMove = -1;
-      p1Label.textContent = mode === '2p' ? 'ORANGE' : 'YOU';
-      p2Label.textContent = mode === '2p' ? 'P2' : 'BOT';
+      if (net) {
+        p1Label.textContent = net.seat === 0 ? 'YOU' : 'THEM';
+        p2Label.textContent = net.seat === 1 ? 'YOU' : 'THEM';
+      } else {
+        p1Label.textContent = mode === '2p' ? 'ORANGE' : 'YOU';
+        p2Label.textContent = mode === '2p' ? 'P2' : 'BOT';
+      }
       render();
-      api.status(mode === '2p' ? 'Orange to move' : 'Your move — dots show legal squares');
+      api.status(net ? onlineStatus() : mode === '2p' ? 'Orange to move' : 'Your move — dots show legal squares');
     }
 
     api.toolbar.append(
       el('div', { class: 'scorebox p1' }, p1Label, p1El),
       el('div', { class: 'scorebox p2' }, p2Label, p2El),
-      el('button', { class: 'btn', type: 'button', onclick: reset }, 'New game'),
-      BB.segmented([['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['2p', '2P']], mode, (m) => { mode = m; reset(); }),
     );
+    if (!net) {
+      api.toolbar.append(
+        el('button', { class: 'btn', type: 'button', onclick: reset }, 'New game'),
+        BB.segmented([['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['2p', '2P']], mode, (m) => { mode = m; reset(); }),
+      );
+    }
     stage.append(grid.el);
     reset();
+    if (net) {
+      net.start(applyNet);
+      render();
+      autoPass(); // in case it was our pass when the app was last closed
+    }
 
-    return () => clearTimeout(botTimer);
+    return () => {
+      clearTimeout(botTimer);
+      clearTimeout(passTimer);
+    };
   },
 });

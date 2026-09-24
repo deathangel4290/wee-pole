@@ -321,6 +321,44 @@ const BB = (() => {
     return { el: grid, at: (r, c) => cells[r * cols + c] };
   }
 
+  /**
+   * Online-play glue shared by the board games. `online` is opts.online from the
+   * match screen (undefined offline, in which case this returns null):
+   *   { seat, names, moves, send(move, final), onMove(cb), closed }
+   * Seat 0 always moves first (X / orange / White).
+   */
+  function onlineGame(online, api) {
+    if (!online) return null;
+    let replaying = false;
+    const opponent = online.names[1 - online.seat];
+    return {
+      seat: online.seat,
+      opponent,
+      /** Replays the match so far through apply(move), then applies live moves as they arrive. */
+      start(apply) {
+        replaying = true;
+        try {
+          for (const m of online.moves) apply(m);
+        } finally {
+          replaying = false;
+        }
+        online.onMove(apply);
+      },
+      myTurn: (seatToMove) => !online.closed && !replaying && seatToMove === online.seat,
+      /** Send a local move; `winner` is undefined while the game goes on, else a seat or null (draw). */
+      send(move, winner) {
+        if (!replaying) online.send(move, winner === undefined ? undefined : { winner });
+      },
+      /** Status text for the end of the game; records the result (not while replaying history). */
+      finish(winner) {
+        if (!replaying) api.record(winner === null ? 'draw' : winner === online.seat ? 'win' : 'loss', { level: 'online' });
+        if (winner === null) return `Draw with ${opponent}.`;
+        return winner === online.seat ? `You beat ${opponent}! 🎉` : `${opponent} wins.`;
+      },
+      turnText: (seatToMove) => (seatToMove === online.seat ? 'Your move' : `Waiting for ${opponent}…`),
+    };
+  }
+
   function shuffle(arr, random = Math.random) {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(random() * (i + 1));
@@ -338,6 +376,6 @@ const BB = (() => {
     games, register, find, stats, best, record, totals,
     dailies, registerDaily, dailyEntry, updateDaily, streak, today, dayNumber, rng,
     achievements, defineAchievement, isUnlocked, unlockedAt: (id) => store.ach[id] || null,
-    el, segmented, squareGrid, onSwipe, onArrowKeys, shuffle, formatTime,
+    el, segmented, squareGrid, onSwipe, onArrowKeys, shuffle, formatTime, onlineGame,
   };
 })();

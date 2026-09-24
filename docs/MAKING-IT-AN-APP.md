@@ -75,4 +75,4 @@ In Xcode: choose your team under *Signing & Capabilities* and run it on your iPh
 2. **When it feels solid:** Level 2, since it's the cheapest store.
 3. **Later:** Level 3, when you have access to a Mac.
 
-Phase 4 (accounts, friends, online multiplayer, global leaderboards) needs a backend server. That is a separate step, and none of the levels above depend on it.
+**Online play** (accounts, friends, leaderboards, multiplayer) needs the small server in `server/`, which also hosts the app. Deploying that server (see [ONLINE.md](ONLINE.md)) gives you a URL that works for Level 1 installs *and* includes online play. It's also the URL to give PWABuilder for Level 2. GitHub Pages alone still works, just without the online features.

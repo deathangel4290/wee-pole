@@ -6,7 +6,7 @@ BB.register({
   icon: '🟠',
   tagline: 'Jump, chain, crown. Captures are forced.',
 
-  mount(stage, api) {
+  mount(stage, api, opts = {}) {
     const { el } = BB;
     const N = 8;
     const DEPTH = { easy: 2, medium: 4, hard: 7 };
@@ -18,7 +18,10 @@ BB.register({
     const isKing = (v) => v > 2;
     const rc = (i) => [Math.floor(i / N), i % N];
 
-    let mode = 'medium'; // 'easy' | 'medium' | 'hard' | '2p'
+    // Online: orange (seat 0) moves first; the white player sees the board flipped.
+    const net = BB.onlineGame(opts.online, api);
+    const flip = !!net && net.seat === 1;
+    let mode = net ? 'online' : 'medium'; // 'easy' | 'medium' | 'hard' | '2p' | 'online'
     let board;
     let turn;
     let over;
@@ -141,13 +144,13 @@ BB.register({
 
     // ----- UI -----
 
-    const grid = BB.squareGrid(N, N, (r, c) => tap(r * N + c), 'checkers');
+    const grid = BB.squareGrid(N, N, (r, c) => tap(flip ? (N - 1 - r) * N + (N - 1 - c) : r * N + c), 'checkers');
     const p1El = el('strong', null, '12');
     const p2El = el('strong', null, '12');
     const p1Label = el('span', null, 'YOU');
     const p2Label = el('span', null, 'BOT');
 
-    const humanTurn = () => !over && !busy && (mode === '2p' || turn === 1);
+    const humanTurn = () => !over && !busy && (net ? net.myTurn(turn - 1) : mode === '2p' || turn === 1);
     const pending = () => legal.filter((m) => m.from === selected && prefix.every((sq, k) => m.path[k] === sq));
 
     // Board as it looks mid-multi-jump: the piece has moved along `prefix`, jumped pieces removed.
@@ -170,7 +173,7 @@ BB.register({
       let p2 = 0;
       for (let i = 0; i < N * N; i++) {
         const [r, c] = rc(i);
-        const cell = grid.at(r, c);
+        const cell = flip ? grid.at(N - 1 - r, N - 1 - c) : grid.at(r, c);
         const v = b[i];
         if (owner(v) === 1) p1++;
         else if (owner(v) === 2) p2++;
@@ -196,8 +199,11 @@ BB.register({
         if (next.length) {
           prefix = [...prefix, i];
           const done = next.find((m) => m.path.length === prefix.length);
-          if (done) commit(done);
-          else render();
+          if (!done) render();
+          else {
+            commit(done);
+            if (net) net.send({ f: done.from, p: done.path }, over ? winnerSeat : undefined);
+          }
           return;
         }
         if (prefix.length) return; // mid-jump: must keep jumping with this piece
@@ -235,6 +241,11 @@ BB.register({
         finish(0);
         return;
       }
+      if (net) {
+        render();
+        api.status(onlineStatus());
+        return;
+      }
       if (mode !== '2p' && turn === 2) {
         busy = true;
         render();
@@ -253,7 +264,22 @@ BB.register({
       api.status(mode === '2p' ? `${name(turn)} to move${must}` : `Your move${must}`);
     }
 
+    const onlineStatus = () => `${net.turnText(turn - 1)}${legal[0]?.captures.length ? ' — capture!' : ''} · you’re ${net.seat === 0 ? 'orange' : 'white'}`;
+    let winnerSeat;
+
+    // Apply a move from the match history or from the opponent.
+    function applyNet(mv) {
+      if (over) return;
+      const m = legal.find((x) => x.from === mv.f && x.path.length === mv.p.length && x.path.every((sq, k) => sq === mv.p[k]));
+      if (m) commit(m);
+    }
+
     function finish(winner) {
+      if (net) {
+        winnerSeat = winner ? winner - 1 : null;
+        api.status(net.finish(winnerSeat));
+        return;
+      }
       if (mode === '2p') {
         api.status(winner ? `${name(winner)} wins!` : 'Draw — no progress in 40 moves.');
         api.record('done');
@@ -280,20 +306,33 @@ BB.register({
       prefix = [];
       lastPath = [];
       legal = movesFor(board, 1);
-      p1Label.textContent = mode === '2p' ? 'ORANGE' : 'YOU';
-      p2Label.textContent = mode === '2p' ? 'P2' : 'BOT';
+      if (net) {
+        p1Label.textContent = net.seat === 0 ? 'YOU' : 'THEM';
+        p2Label.textContent = net.seat === 1 ? 'YOU' : 'THEM';
+      } else {
+        p1Label.textContent = mode === '2p' ? 'ORANGE' : 'YOU';
+        p2Label.textContent = mode === '2p' ? 'P2' : 'BOT';
+      }
       render();
-      api.status(mode === '2p' ? 'Orange to move' : 'Your move — tap a piece');
+      api.status(net ? onlineStatus() : mode === '2p' ? 'Orange to move' : 'Your move — tap a piece');
     }
 
     api.toolbar.append(
       el('div', { class: 'scorebox p1' }, p1Label, p1El),
       el('div', { class: 'scorebox p2' }, p2Label, p2El),
-      el('button', { class: 'btn', type: 'button', onclick: reset }, 'New game'),
-      BB.segmented([['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['2p', '2P']], mode, (m) => { mode = m; reset(); }),
     );
+    if (!net) {
+      api.toolbar.append(
+        el('button', { class: 'btn', type: 'button', onclick: reset }, 'New game'),
+        BB.segmented([['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['2p', '2P']], mode, (m) => { mode = m; reset(); }),
+      );
+    }
     stage.append(grid.el);
     reset();
+    if (net) {
+      net.start(applyNet);
+      render(); // refresh move hints now that replay is over
+    }
 
     return () => clearTimeout(botTimer);
   },

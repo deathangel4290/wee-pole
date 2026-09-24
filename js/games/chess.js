@@ -6,7 +6,7 @@ BB.register({
   icon: '♟️',
   tagline: 'The classic. Checkmate the bot.',
 
-  mount(stage, api) {
+  mount(stage, api, opts = {}) {
     const { el } = BB;
     const E = ChessEngine;
     const BOTS = {
@@ -21,8 +21,9 @@ BB.register({
       repetition: 'Draw by threefold repetition',
     };
 
-    let mode = 'medium'; // 'easy' | 'medium' | 'hard' | '2p'
-    let side = 'w'; // human colour vs the bot
+    const net = BB.onlineGame(opts.online, api); // online: White is seat 0
+    let mode = net ? 'online' : 'medium'; // 'easy' | 'medium' | 'hard' | '2p' | 'online'
+    let side = net && net.seat === 1 ? 'b' : 'w'; // the human's colour vs the bot / online
     let state;
     let history; // [{ state, san, move }] — state *before* each move
     let seen; // position key -> count
@@ -34,7 +35,8 @@ BB.register({
     let game = 0;
     let botTimer = null;
 
-    const humanTurn = () => !over && !busy && (mode === '2p' || state.turn === side);
+    const seatOf = (colour) => (colour === 'w' ? 0 : 1);
+    const humanTurn = () => !over && !busy && (net ? net.myTurn(seatOf(state.turn)) : mode === '2p' || state.turn === side);
 
     const view = BB.chessView(tap);
     const moveList = el('ol', { class: 'move-list', 'aria-label': 'Moves' });
@@ -56,7 +58,8 @@ BB.register({
 
     function updateStatus() {
       const check = E.inCheck(state) ? ' — check!' : '';
-      if (mode === '2p') api.status(`${colourName(state.turn)} to move${check}`);
+      if (net) api.status(`${net.turnText(seatOf(state.turn))}${check} · you’re ${colourName(side)}`);
+      else if (mode === '2p') api.status(`${colourName(state.turn)} to move${check}`);
       else if (state.turn === side) api.status(`Your move${check}`);
       else api.status('Bot is thinking…');
     }
@@ -65,12 +68,26 @@ BB.register({
       if (!humanTurn()) return;
       if (selected >= 0) {
         const options = legal.filter((m) => m.from === selected && m.to === sq);
-        if (options.length === 1) { play(options[0]); return; }
-        if (options.length > 1) { view.promote(state.turn, options, play); return; }
+        if (options.length === 1) { playLocal(options[0]); return; }
+        if (options.length > 1) { view.promote(state.turn, options, playLocal); return; }
       }
       const p = state.board[sq];
       selected = p && E.colorOf(p) === state.turn && sq !== selected ? sq : -1;
       render();
+    }
+
+    let winnerSeat;
+
+    function playLocal(m) {
+      play(m);
+      if (net) net.send({ f: m.from, t: m.to, p: m.promo || undefined }, over ? winnerSeat : undefined);
+    }
+
+    // Apply a move from the match history or from the opponent.
+    function applyNet(mv) {
+      if (over) return;
+      const m = legal.find((x) => x.from === mv.f && x.to === mv.t && (x.promo || undefined) === (mv.p || undefined));
+      if (m) play(m);
     }
 
     function play(m) {
@@ -89,7 +106,7 @@ BB.register({
         finish(res);
         return;
       }
-      if (mode !== '2p' && state.turn !== side) {
+      if (!net && mode !== '2p' && state.turn !== side) {
         botTurn(80);
         return;
       }
@@ -112,6 +129,11 @@ BB.register({
     }
 
     function finish(res) {
+      if (net) {
+        winnerSeat = res === 'checkmate' ? seatOf(state.turn === 'w' ? 'b' : 'w') : null;
+        api.status(`${res === 'checkmate' ? 'Checkmate' : RESULT_TEXT[res]} — ${net.finish(winnerSeat)}`);
+        return;
+      }
       if (res === 'checkmate') {
         const winner = state.turn === 'w' ? 'b' : 'w'; // the side that just moved
         if (mode === '2p') {
@@ -165,18 +187,25 @@ BB.register({
       sideSeg.hidden = mode === '2p';
       render();
       updateStatus();
-      if (mode !== '2p' && side === 'b') botTurn(300);
+      if (!net && mode !== '2p' && side === 'b') botTurn(300);
     }
 
     const sideSeg = BB.segmented([['w', '♔ White'], ['b', '♚ Black']], side, (s) => { side = s; reset(); });
-    api.toolbar.append(
-      BB.segmented([['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['2p', '2P']], mode, (m) => { mode = m; reset(); }),
-      sideSeg,
-      undoBtn,
-      el('button', { class: 'btn', type: 'button', onclick: reset }, 'New game'),
-    );
+    if (!net) {
+      api.toolbar.append(
+        BB.segmented([['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['2p', '2P']], mode, (m) => { mode = m; reset(); }),
+        sideSeg,
+        undoBtn,
+        el('button', { class: 'btn', type: 'button', onclick: reset }, 'New game'),
+      );
+    }
     stage.append(view.el, moveList);
     reset();
+    if (net) {
+      net.start(applyNet);
+      render();
+      if (!over) updateStatus();
+    }
 
     return () => {
       clearTimeout(botTimer);

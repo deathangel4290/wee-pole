@@ -2,7 +2,7 @@
 
 // Offline support: cache the app shell, serve cache-first, refresh in the background.
 // Bump VERSION whenever you add or rename a file so old caches get dropped.
-const VERSION = 'boardbox-v3';
+const VERSION = 'boardbox-v4';
 const FILES = [
   './',
   'index.html',
@@ -13,6 +13,7 @@ const FILES = [
   'icons/maskable-512.png',
   'icons/apple-touch-icon.png',
   'css/style.css',
+  'js/config.js',
   'js/core.js',
   'js/achievements.js',
   'js/games/chess-engine.js',
@@ -28,6 +29,7 @@ const FILES = [
   'js/games/minesweeper.js',
   'js/games/snake.js',
   'js/daily.js',
+  'js/online.js',
   'js/main.js',
 ];
 
@@ -44,7 +46,9 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
+  const url = new URL(e.request.url);
+  // Only the app shell is cached; the online API (including the live event stream) always goes to the network.
+  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.includes('/api/')) return;
   e.respondWith(
     caches.open(VERSION).then(async (cache) => {
       const cached = await cache.match(e.request);

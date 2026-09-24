@@ -1,12 +1,16 @@
 {
   "name": "board-box",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "BOARD//BOX — one app, every game.",
   "scripts": {
-    "start": "python3 -m http.server 8000",
-    "test": "node tests/chess-perft.js && node tests/logic.js",
+    "start": "node server/index.js",
+    "static": "python3 -m http.server 8000",
+    "test": "node tests/chess-perft.js && node tests/logic.js && node tests/server.js",
     "build": "rm -rf dist && mkdir dist && cp -r index.html manifest.webmanifest sw.js css js icons dist/",
     "puzzles": "node tools/gen-puzzles.js 120"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

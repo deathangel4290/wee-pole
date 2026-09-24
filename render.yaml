@@ -1,0 +1,18 @@
+# One-click deploy on Render: Dashboard -> New -> Blueprint -> pick this repo.
+# The persistent disk needs a paid instance (Starter). On the free plan, delete the
+# `disk` block: it still works, but accounts and leaderboards reset when the server restarts.
+services:
+  - type: web
+    name: boardbox
+    runtime: node
+    plan: starter
+    buildCommand: "true"
+    startCommand: node server/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATA_FILE
+        value: /data/boardbox.json
+    disk:
+      name: boardbox-data
+      mountPath: /data
+      sizeGB: 1

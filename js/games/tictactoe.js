@@ -6,7 +6,7 @@ BB.register({
   icon: '❌',
   tagline: 'Three in a row. Beat the bot.',
 
-  mount(stage, api) {
+  mount(stage, api, opts = {}) {
     const { el } = BB;
     const LINES = [
       [0, 1, 2], [3, 4, 5], [6, 7, 8],
@@ -14,7 +14,8 @@ BB.register({
       [0, 4, 8], [2, 4, 6],
     ];
 
-    let mode = 'hard'; // 'easy' | 'hard' | '2p'
+    const net = BB.onlineGame(opts.online, api); // online match vs another player
+    let mode = net ? 'online' : 'hard'; // 'easy' | 'hard' | '2p' | 'online'
     let board;
     let turn;
     let over;
@@ -88,7 +89,8 @@ BB.register({
       }
       turn = turn === 'X' ? 'O' : 'X';
       render();
-      if (mode === '2p') api.status(`${turn} to move`);
+      if (net) api.status(`${net.turnText(seatOf(turn))} (${turn})`);
+      else if (mode === '2p') api.status(`${turn} to move`);
       else if (turn === 'O') {
         api.status('Bot is thinking…');
         const g = game;
@@ -96,13 +98,27 @@ BB.register({
       } else api.status('Your move (X)');
     }
 
+    const seatOf = (mark) => (mark === 'X' ? 0 : 1);
+
     function humanMove(i) {
       if (over || board[i]) return;
+      if (net) {
+        if (!net.myTurn(seatOf(turn))) return;
+        place(i);
+        net.send(i, over ? winnerSeat : undefined);
+        return;
+      }
       if (mode !== '2p' && turn !== 'X') return;
       place(i);
     }
 
+    let winnerSeat;
     function finish(winner) {
+      if (net) {
+        winnerSeat = winner ? seatOf(winner) : null;
+        api.status(net.finish(winnerSeat));
+        return;
+      }
       if (mode === '2p') {
         api.status(winner ? `${winner} wins!` : "It's a draw.");
         api.record('done');
@@ -120,15 +136,19 @@ BB.register({
       turn = 'X';
       over = false;
       render();
-      api.status(mode === '2p' ? 'X to move' : 'Your move (X)');
+      if (net) api.status(`${net.turnText(0)} (X)`);
+      else api.status(mode === '2p' ? 'X to move' : 'Your move (X)');
     }
 
-    api.toolbar.append(
-      BB.segmented([['easy', 'Bot · Easy'], ['hard', 'Bot · Hard'], ['2p', '2 Players']], mode, (m) => { mode = m; reset(); }),
-      el('button', { class: 'btn', type: 'button', onclick: reset }, 'New game'),
-    );
+    if (!net) {
+      api.toolbar.append(
+        BB.segmented([['easy', 'Bot · Easy'], ['hard', 'Bot · Hard'], ['2p', '2 Players']], mode, (m) => { mode = m; reset(); }),
+        el('button', { class: 'btn', type: 'button', onclick: reset }, 'New game'),
+      );
+    }
     stage.append(grid);
     reset();
+    if (net) net.start((i) => { if (!over && !board[i]) place(i); });
 
     return () => clearTimeout(botTimer);
   },

@@ -6,7 +6,7 @@ BB.register({
   icon: '🔴',
   tagline: 'Drop discs. Line up four.',
 
-  mount(stage, api) {
+  mount(stage, api, opts = {}) {
     const { el } = BB;
     const ROWS = 6;
     const COLS = 7;
@@ -14,7 +14,8 @@ BB.register({
     const DEPTH = { easy: 2, medium: 4, hard: 7 };
     const WIN = 1e6;
 
-    let mode = 'medium'; // 'easy' | 'medium' | 'hard' | '2p'
+    const net = BB.onlineGame(opts.online, api); // online match: player 1 is seat 0
+    let mode = net ? 'online' : 'medium'; // 'easy' | 'medium' | 'hard' | '2p' | 'online'
     let board; // board[r][c], r = 0 is the top row; 0 empty, 1 player one, 2 player two / bot
     let turn;
     let over;
@@ -159,13 +160,21 @@ BB.register({
         finish(0);
       } else {
         turn = 3 - turn;
-        api.status(mode === '2p' ? `${label(turn)} to move` : turn === 1 ? 'Your move' : 'Bot is thinking…');
+        api.status(net ? onlineStatus() : mode === '2p' ? `${label(turn)} to move` : turn === 1 ? 'Your move' : 'Bot is thinking…');
       }
       return true;
     }
 
+    const onlineStatus = () => `${net.turnText(turn - 1)} · you’re ${net.seat === 0 ? 'orange' : 'white'}`;
+    let winnerSeat;
+
     function humanDrop(c) {
       if (over || busy) return;
+      if (net) {
+        if (!net.myTurn(turn - 1) || !drop(c)) return;
+        net.send(c, over ? winnerSeat : undefined);
+        return;
+      }
       if (mode !== '2p' && turn !== 1) return;
       if (!drop(c)) return;
       if (!over && mode !== '2p') {
@@ -181,6 +190,11 @@ BB.register({
     }
 
     function finish(winner) {
+      if (net) {
+        winnerSeat = winner ? winner - 1 : null;
+        api.status(net.finish(winnerSeat));
+        return;
+      }
       if (mode === '2p') {
         api.status(winner ? `${label(winner)} wins!` : 'Board full — draw.');
         api.record('done');
@@ -202,15 +216,18 @@ BB.register({
           paint(r, c, false);
         }
       }
-      api.status(mode === '2p' ? 'Player 1 (orange) to move' : 'Your move — tap a column');
+      api.status(net ? onlineStatus() : mode === '2p' ? 'Player 1 (orange) to move' : 'Your move — tap a column');
     }
 
-    api.toolbar.append(
-      BB.segmented([['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['2p', '2P']], mode, (m) => { mode = m; reset(); }),
-      el('button', { class: 'btn', type: 'button', onclick: reset }, 'New game'),
-    );
+    if (!net) {
+      api.toolbar.append(
+        BB.segmented([['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['2p', '2P']], mode, (m) => { mode = m; reset(); }),
+        el('button', { class: 'btn', type: 'button', onclick: reset }, 'New game'),
+      );
+    }
     stage.append(grid);
     reset();
+    if (net) net.start((c) => { if (!over) drop(c); });
 
     return () => clearTimeout(botTimer);
   },
