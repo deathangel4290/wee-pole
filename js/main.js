@@ -151,6 +151,16 @@
       }));
   }
 
+  /** Pip says hello on the home screen, with something relevant to today. */
+  function homePip() {
+    if (!BB.settings.get('coach')) return null;
+    const pip = BB.coach.create();
+    pip.el.classList.add('home-pip');
+    const [line, mood] = BB.coach.greeting();
+    setTimeout(() => pip.say(line, mood, { hold: 9000 }), 350);
+    return pip.el;
+  }
+
   function renderHome() {
     teardown();
     rouletteRun = null;
@@ -202,6 +212,7 @@
         el('p', { class: 'slogan' }, 'One app. Every game.'),
       ),
       el('main', { class: 'home' },
+        homePip(),
         dailyCard(),
         onlineSlot,
         roulette,
@@ -220,6 +231,12 @@
   }
 
   // ---------- profile ----------
+
+  function settingRow(label, hint, key, options) {
+    return el('div', { class: 'setting' },
+      el('div', null, el('strong', null, label), el('small', null, hint)),
+      BB.segmented(options, BB.settings.get(key), (v) => BB.settings.set(key, v)));
+  }
 
   function renderProfile() {
     teardown();
@@ -291,6 +308,11 @@
               el('th', { scope: 'col' }, 'W–L–D'),
               el('th', { scope: 'col' }, 'Bests'))),
             el('tbody', null, rows))),
+        el('h2', { class: 'section-title' }, 'SETTINGS'),
+        el('div', { class: 'settings' },
+          settingRow('🤖 Pip the coach', 'Tips and cheering while you play', 'coach', [[true, 'On'], [false, 'Off']]),
+          settingRow('💡 Hints', 'Hint button in offline games', 'hints', [[true, 'On'], [false, 'Off']]),
+          settingRow('✨ Animations', 'How fast pieces move', 'anim', [['normal', 'Normal'], ['fast', 'Fast'], ['off', 'Off']])),
         el('p', { class: 'fineprint' }, 'Progress is saved on this device.'),
         el('button', {
           class: 'btn danger', type: 'button',
@@ -372,7 +394,7 @@
    * Mount something playable. `statsId` is the game whose stats results count
    * towards; `daily` is set for daily challenges.
    */
-  function renderPlayable({ title, icon, statsId, mount, daily = null }) {
+  function renderPlayable({ title, icon, statsId, mount, daily = null, online = false }) {
     rouletteRun = daily || !rouletteRun || rouletteRun.id !== statsId ? null : rouletteRun;
     teardown();
     document.title = `${title} · BOARD//BOX`;
@@ -385,7 +407,17 @@
     head.append(timer);
     if (daily) head.append(el('div', { class: 'run-timer daily-badge' }, prettyDate(daily.date)));
 
-    app.replaceChildren(head, el('main', { class: 'game-screen' }, status, toolbar, stage));
+    // Pip the coach sits under the board (unless switched off in settings).
+    const pip = BB.settings.get('coach') ? BB.coach.create({ game: statsId }) : null;
+    // Hints are for learning: never in dailies (leaderboards) or online games.
+    const hintsAllowed = !daily && !online && BB.settings.get('hints');
+    let reviewBuilder = null;
+    const reviewBtn = el('button', {
+      class: 'btn review-btn', type: 'button', hidden: true,
+      onclick: () => { if (reviewBuilder) reviewBuilder(); },
+    }, '📋 Review');
+
+    app.replaceChildren(head, el('main', { class: 'game-screen' }, status, toolbar, stage, pip ? pip.el : null));
 
     if (!daily && rouletteRun && rouletteRun.id === statsId) startRunTimer(timer);
 
@@ -396,8 +428,37 @@
         const out = BB.record(statsId, result, { ...opts, roulette: !!rouletteRun });
         if (out.newBest && !daily) toast('★ New best!');
         announce(out.unlocked);
+        if (pip) {
+          if (result === 'win') pip.react('win');
+          else if (result === 'loss') pip.react('loss');
+          else if (result === 'draw') pip.react('draw');
+          else if (out.newBest) pip.react('newBest');
+        }
         return out;
       },
+      /** Pip reacts to an event (see js/coach.js), optionally with a custom line. */
+      coach: (event, line) => { if (pip) pip.react(event, line); },
+      say: (line, mood) => { if (pip) pip.say(line, mood); },
+      /** Adds a 💡 Hint button (when hints are allowed); fn() shows the hint and may return a line for Pip. */
+      hint: (fn) => {
+        if (!hintsAllowed) return null;
+        const b = el('button', {
+          class: 'btn hint-btn', type: 'button',
+          onclick: () => {
+            const line = fn();
+            if (line !== false) api.coach('hint', typeof line === 'string' ? line : undefined);
+          },
+        }, '💡 Hint');
+        toolbar.append(b);
+        return b;
+      },
+      /** Offers a 📋 Review of the finished game (null hides the button again). */
+      review: (builder) => {
+        reviewBuilder = builder;
+        reviewBtn.hidden = !builder;
+        if (builder && !reviewBtn.isConnected) toolbar.append(reviewBtn);
+      },
+      hintsAllowed,
       best: (key) => BB.best(statsId, key),
       toast,
       daily: (fn) => {
@@ -409,7 +470,12 @@
       },
     };
 
-    unmountGame = mount(stage, api, daily ? { daily } : {}) || null;
+    const cleanup = mount(stage, api, daily ? { daily } : {}) || null;
+    unmountGame = () => {
+      if (cleanup) cleanup();
+      if (pip) pip.destroy();
+    };
+    if (pip && !online) setTimeout(() => pip.react('start'), 400);
     window.scrollTo(0, 0);
     return api;
   }

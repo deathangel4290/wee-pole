@@ -178,7 +178,8 @@ const check = (label, cond) => {
   await new Promise((r) => app.server.listen(0, r));
   base = `http://127.0.0.1:${app.server.address().port}`;
   me = (await call('GET', '/api/me', { token: alice.token })).data;
-  check('data survives a restart', me && me.friends.length === 1 && me.record.l === 1);
+  // Seats are random, so alice may have won or lost the tic-tac-toe game; she resigned connect 4.
+  check('data survives a restart', me && me.friends.length === 1 && me.record.w + me.record.l === 2 && me.record.l >= 1);
   lb = (await call('GET', `/api/leaderboard?kind=sweep&date=${today}`, { token: alice.token })).data;
   check('leaderboard survives a restart', lb.total === 3);
 

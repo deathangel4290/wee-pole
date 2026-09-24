@@ -34,7 +34,19 @@ python3 -m http.server 8000
 | 🔴 Connect 4 | Bot (easy / medium / hard alpha-beta search), 2 players |
 | 🔢 2048 | Swipe or arrow keys, best score |
 | 💣 Minesweeper | Easy / medium / hard, safe first tap, long-press or flag mode, chording, best times |
-| 🐍 Snake | Swipe, arrows/WASD or on-screen pad, speeds up as you grow |
+| 🐍 Snake Arcade | Smooth movement, levels with obstacles, combos (up to ×5), power-ups: ⭐ golden apple, 👻 ghost, 🐢 slow-mo |
+
+Every offline game also has:
+
+- **💡 Hints**: the engine's suggested move, a guaranteed-safe Minesweeper square, or the best 2048 swipe. Hints are turned off in dailies and online games.
+- **📋 Post-game reviews** that show what you could have done better:
+  - Chess, Checkers, Reversi and Connect 4 rate every move as best, inaccuracy, mistake or blunder. Each item explains *why* the move was worse (a hanging piece, a missed win, a corner given away) and shows a mini board with the better move.
+  - Tic-Tac-Toe is analysed with perfect play.
+  - Minesweeper says whether your losing click was avoidable or a genuine guess.
+  - 2048 and Snake give strategy tips based on how you played.
+- **🤖 Pip, the coach**: a character who reacts as you play. Pip cheers your best moves, warns you about blunders, gives a tip when you tap it, and says hello on the home screen. The lines are scripted and chosen from what's happening in your game (engine move ratings, results, streaks), so Pip works offline.
+- **Animations**: chess pieces slide, checkers hop along their jumps, Reversi discs flip in a ripple, 2048 tiles slide and merge, and Tic-Tac-Toe draws its winning line. Bots pause briefly to "think".
+- **Settings** (Profile page): Pip on or off, hints on or off, and animation speed (normal, fast or off). The system's reduced-motion setting is respected too.
 
 Hub features:
 
@@ -66,6 +78,8 @@ js/achievements.js      the 25 achievements
 js/daily.js             Daily 2048 + Daily Sweep (seeded modes of the normal games)
 js/main.js              routing, home, game/daily screens, profile, roulette, install prompt
 js/online.js            online client + screens (lobby, friends, leaderboards, matches)
+js/coach.js             Pip the coach: reactions, tips, greetings
+js/review.js            the post-game review sheet
 js/config.js            where the online server lives (blank = same origin)
 server/                 zero-dependency Node server: accounts, friends, leaderboards, matches
 Dockerfile, render.yaml deploy the server (which also serves the app)

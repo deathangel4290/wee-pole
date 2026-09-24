@@ -647,6 +647,7 @@ BB.net = (() => {
         title: `${game.name} vs ${opp}`,
         icon: game.icon,
         statsId: game.id,
+        online: true,
         mount: (stage, gameApi, opts) => game.mount(stage, gameApi, { ...opts, online }),
       });
 

@@ -15,7 +15,14 @@ BB.chessView = function chessView(onTap) {
   const toSquare = (r, c) => (flipped ? (7 - r) * 8 + (7 - c) : r * 8 + c);
   const grid = BB.squareGrid(8, 8, (r, c) => onTap(toSquare(r, c)), 'chess');
 
-  function render({ state, selected = -1, legal = [], lastMove = null, flip = false }) {
+  const cellFor = (sq) => (flipped ? grid.at(7 - (sq >> 3), 7 - (sq & 7)) : grid.at(sq >> 3, sq & 7));
+
+  /**
+   * Draws `state`. With `animate` (a move just played), the piece slides from its
+   * old square and any captured piece fades out under it. `hint` = { from, to }
+   * pulses those squares.
+   */
+  function render({ state, selected = -1, legal = [], lastMove = null, flip = false, animate = null, hint = null }) {
     flipped = flip;
     const targets = new Map();
     if (selected >= 0) for (const m of legal) if (m.from === selected) targets.set(m.to, m);
@@ -30,12 +37,37 @@ BB.chessView = function chessView(onTap) {
         cell.classList.toggle('capture', targets.has(sq) && !!targets.get(sq).captured);
         cell.classList.toggle('last', !!lastMove && (sq === lastMove.from || sq === lastMove.to));
         cell.classList.toggle('check', sq === checkSq);
+        cell.classList.toggle('hinted', !!hint && (sq === hint.from || sq === hint.to));
         cell.dataset.file = r === 7 ? 'abcdefgh'[sq & 7] : '';
         cell.dataset.rank = c === 0 ? String(8 - (sq >> 3)) : '';
         cell.setAttribute('aria-label', `${E.nameOf(sq)}${p ? ` ${E.colorOf(p) === 'w' ? 'white' : 'black'} ${p.toUpperCase()}` : ''}`);
         cell.replaceChildren();
         if (p) cell.append(el('span', { class: `pc ${E.colorOf(p)}` }, GLYPH[p.toUpperCase()]));
       }
+    }
+    if (animate) slide(animate);
+  }
+
+  const SLIDE_MS = 280;
+
+  function slide(m) {
+    if (!BB.animMs(SLIDE_MS)) return;
+    const to = cellFor(m.to);
+    const piece = to.querySelector('.pc');
+    if (m.captured) {
+      // The captured piece shrinks away underneath the arriving one.
+      const capSq = m.flag === 'ep' ? m.to + (E.colorOf(m.piece) === 'w' ? 8 : -8) : m.to;
+      const ghost = el('span', { class: `pc ${E.colorOf(m.captured)} ghost` }, GLYPH[m.captured.toUpperCase()]);
+      cellFor(capSq).append(ghost);
+      ghost.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.4) rotate(-20deg)' }],
+        { duration: BB.animMs(SLIDE_MS * 1.3), easing: 'ease-in' }).finished.catch(() => {}).then(() => ghost.remove());
+    }
+    BB.travel(piece, [BB.offset(cellFor(m.from), to)], SLIDE_MS);
+    if (m.flag === 'castle') {
+      const kingSide = m.to > m.from;
+      const rookFrom = kingSide ? m.from + 3 : m.from - 4;
+      const rookTo = kingSide ? m.from + 1 : m.from - 1;
+      BB.travel(cellFor(rookTo).querySelector('.pc'), [BB.offset(cellFor(rookFrom), cellFor(rookTo))], SLIDE_MS);
     }
   }
 

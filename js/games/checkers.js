@@ -31,8 +31,15 @@ BB.register({
     let selected = -1;
     let prefix = []; // squares already stepped through during a multi-jump
     let lastPath = [];
+    let hint = null; // suggested move, pulsing
+    let hintsUsed = 0;
+    let history = []; // [{ board, player, move, legal }] for the review
     let game = 0;
     let botTimer = null;
+    let rateTimer = null;
+    const HOP_MS = 210;
+    const BOT_THINK_MS = 650;
+    const sqName = (i) => 'abcdefgh'[i % N] + (N - Math.floor(i / N));
 
     function dirsFor(v) {
       if (isKing(v)) return [[-1, -1], [-1, 1], [1, -1], [1, 1]];
@@ -142,6 +149,29 @@ BB.register({
       return best[Math.floor(Math.random() * best.length)];
     }
 
+    /** Every legal move for `p` with a search score (best first), for hints, ratings and reviews. */
+    function scoreAll(b, p, depth) {
+      return movesFor(b, p)
+        .map((m) => ({ move: m, score: Math.max(-2000, Math.min(2000, -negamax(apply(b, m), depth - 1, -Infinity, Infinity, 3 - p))) }))
+        .sort((x, y) => y.score - x.score);
+    }
+
+    const sameMove = (a, b) => a.from === b.from && a.path.length === b.path.length && a.path.every((sq, k) => sq === b.path[k]);
+
+    function rateMove(scores, m) {
+      const best = scores[0];
+      const played = scores.find((x) => sameMove(x.move, m)) || best;
+      const loss = best.score - played.score;
+      let kind;
+      if (best.score >= 1000 && played.score < 1000) kind = 'missed';
+      else if (loss <= 10) kind = scores.length > 1 && played === best ? 'best' : 'good';
+      else if (loss <= 30) kind = 'good';
+      else if (loss <= 70) kind = 'inaccuracy';
+      else if (loss <= 150) kind = 'mistake';
+      else kind = 'blunder';
+      return { kind, loss, best, played };
+    }
+
     // ----- UI -----
 
     const grid = BB.squareGrid(N, N, (r, c) => tap(flip ? (N - 1 - r) * N + (N - 1 - c) : r * N + c), 'checkers');
@@ -151,6 +181,24 @@ BB.register({
     const p2Label = el('span', null, 'BOT');
 
     const humanTurn = () => !over && !busy && (net ? net.myTurn(turn - 1) : mode === '2p' || turn === 1);
+    const vsBot = () => !net && mode !== '2p';
+    const cellOf = (i) => {
+      const [r, c] = rc(i);
+      return flip ? grid.at(N - 1 - r, N - 1 - c) : grid.at(r, c);
+    };
+
+    /** The piece now on `to` hops in through `stops`; `ghosts` ([square, value]) fade out as it jumps them. */
+    function animateHops(stops, to, ghosts) {
+      if (!BB.animMs(HOP_MS)) return;
+      const piece = cellOf(to).querySelector('.man');
+      BB.travel(piece, stops.map((sq) => BB.offset(cellOf(sq), cellOf(to))), HOP_MS * stops.length, 'ease-in-out');
+      ghosts.forEach(([sq, v], k) => {
+        const g = el('span', { class: `man ghost p${owner(v)}${isKing(v) ? ' king' : ''}` });
+        cellOf(sq).append(g);
+        g.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 1, offset: 0.5 }, { opacity: 0, transform: 'scale(0.3)' }],
+          { duration: BB.animMs(HOP_MS * (k + 1.6)), easing: 'ease-in' }).finished.catch(() => {}).then(() => g.remove());
+      });
+    }
     const pending = () => legal.filter((m) => m.from === selected && prefix.every((sq, k) => m.path[k] === sq));
 
     // Board as it looks mid-multi-jump: the piece has moved along `prefix`, jumped pieces removed.
@@ -181,6 +229,7 @@ BB.register({
         cell.classList.toggle('target', targets.has(i));
         cell.classList.toggle('movable', movable.has(i) && i !== current);
         cell.classList.toggle('last', lastPath.includes(i));
+        cell.classList.toggle('hinted', !!hint && (i === hint.from || i === hint.path[hint.path.length - 1]));
         cell.replaceChildren();
         if (v) cell.append(el('span', { class: `man p${owner(v)}${isKing(v) ? ' king' : ''}` }));
       }
@@ -197,12 +246,21 @@ BB.register({
       if (selected >= 0) {
         const next = pending().filter((m) => m.path[prefix.length] === i);
         if (next.length) {
+          const prev = prefix.length ? prefix[prefix.length - 1] : selected;
+          const jumped = next[0].captures[prefix.length];
+          const jumpedValue = jumped === undefined ? 0 : displayBoard()[jumped];
           prefix = [...prefix, i];
           const done = next.find((m) => m.path.length === prefix.length);
-          if (!done) render();
-          else {
-            commit(done);
+          if (!done) {
+            // Mid multi-jump: show this hop, then wait for the next tap.
+            render();
+            animateHops([prev], i, jumped === undefined ? [] : [[jumped, jumpedValue]]);
+          } else {
+            const beforeBoard = board;
+            const beforeLegal = legal;
+            commit(done, prefix.length > 1 ? prev : undefined);
             if (net) net.send({ f: done.from, p: done.path }, over ? winnerSeat : undefined);
+            if (vsBot()) rateLater(beforeBoard, beforeLegal, done);
           }
           return;
         }
@@ -220,46 +278,57 @@ BB.register({
       }
     }
 
-    function commit(m) {
+    /**
+     * Plays a complete move. `hopFrom` is set when the player already watched the
+     * earlier hops of a multi-jump, so only the last hop animates.
+     */
+    function commit(m, hopFrom) {
+      const before = board;
       const v = board[m.from];
+      history.push({ board: before, player: turn, move: m, legal });
       quiet = m.captures.length || !isKing(v) ? 0 : quiet + 1;
       board = apply(board, m);
       lastPath = [m.from, ...m.path];
       selected = -1;
       prefix = [];
+      hint = null;
       turn = 3 - turn;
       legal = movesFor(board, turn);
+      render();
+      const stops = hopFrom !== undefined ? [hopFrom] : [m.from, ...m.path.slice(0, -1)];
+      const shownCaps = m.captures.length - (hopFrom !== undefined ? 1 : m.captures.length);
+      animateHops(stops, m.path[m.path.length - 1], m.captures.slice(shownCaps).map((sq) => [sq, before[sq]]));
       if (!legal.length) {
         over = true;
-        render();
         finish(3 - turn);
         return;
       }
       if (quiet >= DRAW_PLIES) {
         over = true;
-        render();
         finish(0);
         return;
       }
       if (net) {
-        render();
         api.status(onlineStatus());
         return;
       }
       if (mode !== '2p' && turn === 2) {
         busy = true;
-        render();
         api.status('Bot is thinking…');
         const g = game;
+        const started = Date.now();
         botTimer = setTimeout(() => {
           if (g !== game) return;
           const bm = botMove();
-          busy = false;
-          commit(bm);
-        }, 450);
+          const wait = Math.max(0, (BB.animMs(BOT_THINK_MS + HOP_MS * (m.path.length - 1)) || 150) - (Date.now() - started));
+          botTimer = setTimeout(() => {
+            if (g !== game) return;
+            busy = false;
+            commit(bm);
+          }, wait);
+        }, 40);
         return;
       }
-      render();
       const must = legal[0].captures.length ? ' — capture!' : '';
       api.status(mode === '2p' ? `${name(turn)} to move${must}` : `Your move${must}`);
     }
@@ -274,7 +343,108 @@ BB.register({
       if (m) commit(m);
     }
 
+    // Pip rates the move you just made (against the bot).
+    function rateLater(b, movesBefore, m) {
+      clearTimeout(rateTimer);
+      rateTimer = setTimeout(() => {
+        if (movesBefore.length < 2) return; // forced move: nothing to rate
+        const r = rateMove(scoreAll(b, 1, 4), m);
+        if (r.kind === 'missed') api.coach('blunder', 'Ooh, you had a winning line there. Check the review after!');
+        else if (r.kind === 'blunder') api.coach('blunder');
+        else if (r.kind === 'mistake') api.coach('mistake');
+        else if (r.kind === 'best') api.coach('best');
+      }, 60);
+    }
+
+    function showHint() {
+      if (!humanTurn()) {
+        api.toast('Wait for your turn');
+        return false;
+      }
+      const best = scoreAll(board, turn, 6)[0];
+      hint = best.move;
+      selected = best.move.from;
+      prefix = [];
+      hintsUsed++;
+      render();
+      const hops = best.move.path.map(sqName).join(' → ');
+      return best.move.captures.length > 1
+        ? `Look for the ${best.move.captures.length}-piece jump: ${sqName(best.move.from)} → ${hops}!`
+        : `Try ${sqName(best.move.from)} → ${hops}.`;
+    }
+
+    function miniBoard(b, played, better) {
+      const g = BB.squareGrid(N, N, () => {}, 'checkers');
+      for (let i = 0; i < N * N; i++) {
+        const [r, c] = rc(i);
+        const cell = g.at(r, c);
+        if (b[i]) cell.append(el('span', { class: `man p${owner(b[i])}${isKing(b[i]) ? ' king' : ''}` }));
+        cell.classList.toggle('last', i === played.from || played.path.includes(i));
+        cell.classList.toggle('hinted', i === better.from || better.path.includes(i));
+      }
+      return el('div', null, g.el, el('p', { class: 'fineprint' }, 'Yellow: your move · Pulsing green: the better move'));
+    }
+
+    function openReview() {
+      const sheet = BB.review.open({ title: 'Checkers review' });
+      const me = net ? [net.seat + 1] : vsBot() ? [1] : [1, 2];
+      const rows = history.filter((h) => me.includes(h.player) && h.legal.length > 1);
+      const results = [];
+      let i = 0;
+      const step = () => {
+        if (!sheet.open) return;
+        if (i < rows.length) {
+          const h = rows[i++];
+          results.push({ h, r: rateMove(scoreAll(h.board, h.player, 6), h.move) });
+          sheet.progress(i / rows.length);
+          setTimeout(step, 0);
+          return;
+        }
+        const count = (k) => results.filter((x) => x.r.kind === k).length;
+        const accuracy = results.length ? Math.round(results.reduce((a, x) => a + Math.max(0, 100 - x.r.loss / 2), 0) / results.length) : 100;
+        const bad = results.filter((x) => ['missed', 'blunder', 'mistake', 'inaccuracy'].includes(x.r.kind))
+          .sort((a, b) => b.r.loss - a.r.loss).slice(0, 8).sort((a, b) => history.indexOf(a.h) - history.indexOf(b.h));
+        let gaveJumps = 0;
+        const items = bad.map(({ h, r }) => {
+          const best = r.best.move;
+          const after = apply(h.board, h.move);
+          const reply = movesFor(after, 3 - h.player)[0];
+          let detail;
+          if (best.captures.length > h.move.captures.length) detail = `A bigger jump was there: ${best.captures.length} pieces, from ${sqName(best.from)}.`;
+          else if (reply && reply.captures.length) {
+            gaveJumps++;
+            detail = `This left a piece open, and they could jump ${reply.captures.length} of yours. ${sqName(best.from)} → ${sqName(best.path[best.path.length - 1])} was safer.`;
+          } else detail = `${sqName(best.from)} → ${best.path.map(sqName).join(' → ')} was stronger.`;
+          const moveNo = Math.floor(history.indexOf(h) / 2) + 1;
+          return {
+            kind: r.kind,
+            title: `Move ${moveNo}: ${sqName(h.move.from)} → ${sqName(h.move.path[h.move.path.length - 1])}`,
+            detail,
+            show: () => miniBoard(h.board, h.move, best),
+          };
+        });
+        let coach;
+        if (!results.length) coach = 'Not many choices that game. Most of your moves were forced captures!';
+        else if (!bad.length) coach = `Great game: ${accuracy}% accuracy and no real mistakes! 🌟`;
+        else if (gaveJumps >= 2) coach = 'Main lesson: before moving, check if your piece can be jumped. Keep them backed up!';
+        else coach = `Your biggest swing was move ${Math.floor(history.indexOf(bad[0].h) / 2) + 1}. Tap it to see why.`;
+        sheet.update({
+          coach,
+          stats: [
+            ['Accuracy', `${accuracy}%`],
+            ['Best moves', count('best')],
+            ['Mistakes', count('mistake') + count('inaccuracy')],
+            ['Blunders', count('blunder') + count('missed')],
+            ...(hintsUsed ? [['Hints used', hintsUsed]] : []),
+          ],
+          items,
+        });
+      };
+      setTimeout(step, 50);
+    }
+
     function finish(winner) {
+      api.review(openReview);
       if (net) {
         winnerSeat = winner ? winner - 1 : null;
         api.status(net.finish(winnerSeat));
@@ -284,13 +454,18 @@ BB.register({
         api.status(winner ? `${name(winner)} wins!` : 'Draw — no progress in 40 moves.');
         api.record('done');
       } else if (winner === 1) { api.status('You win! 🎉'); api.record('win', { level: mode }); }
-      else if (winner === 2) { api.status('Bot wins.'); api.record('loss', { level: mode }); }
+      else if (winner === 2) { api.status('Bot wins. Tap 📋 Review to see what happened.'); api.record('loss', { level: mode }); }
       else { api.status('Draw — no progress in 40 moves.'); api.record('draw', { level: mode }); }
     }
 
     function reset() {
       game++;
       clearTimeout(botTimer);
+      clearTimeout(rateTimer);
+      history = [];
+      hint = null;
+      hintsUsed = 0;
+      api.review(null);
       board = new Int8Array(N * N);
       for (let i = 0; i < N * N; i++) {
         const [r, c] = rc(i);
@@ -326,6 +501,7 @@ BB.register({
         el('button', { class: 'btn', type: 'button', onclick: reset }, 'New game'),
         BB.segmented([['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['2p', '2P']], mode, (m) => { mode = m; reset(); }),
       );
+      api.hint(showHint);
     }
     stage.append(grid.el);
     reset();
@@ -334,6 +510,9 @@ BB.register({
       render(); // refresh move hints now that replay is over
     }
 
-    return () => clearTimeout(botTimer);
+    return () => {
+      clearTimeout(botTimer);
+      clearTimeout(rateTimer);
+    };
   },
 });

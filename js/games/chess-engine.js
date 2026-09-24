@@ -366,7 +366,27 @@ const ChessEngine = (() => {
       return scored;
     }
 
-    return { root };
+    return { root, negamax };
+  }
+
+  /**
+   * Scores every legal move from the side to move's point of view (centipawns;
+   * ±MATE-ish for forced mates), best first. Falls back to a shallower search if
+   * `timeMs` runs out. Used by the post-game review, hints and Pip's move ratings.
+   */
+  function scoreMoves(s, depth = 3, timeMs = 1500) {
+    const moves = legalMoves(s).sort((a, b) => orderScore(b) - orderScore(a));
+    for (let d = depth; d >= 1; d--) {
+      const search = createSearch(d === 1 ? Infinity : Date.now() + timeMs);
+      try {
+        return moves
+          .map((m) => ({ move: m, score: -search.negamax(m.next, d - 1, -Infinity, Infinity, 1) }))
+          .sort((a, b) => b.score - a.score);
+      } catch (e) {
+        if (e !== ABORT) throw e;
+      }
+    }
+    return [];
   }
 
   /**
@@ -447,6 +467,7 @@ const ChessEngine = (() => {
   }
 
   return {
+    scoreMoves, evaluate, MATE,
     canMate, defenderLoses, matingMoves, toFEN,
     fromFEN, initial, legalMoves, pseudoMoves, makeMove, inCheck, result, san, key, bestMove, colorOf, nameOf,
   };

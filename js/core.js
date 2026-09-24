@@ -43,6 +43,7 @@ const BB = (() => {
   store.daily = store.daily || {}; // date -> kind -> entry
   store.ach = store.ach || {}; // achievement id -> unlock timestamp
   store.counters = store.counters || {};
+  store.settings = { coach: true, hints: true, anim: 'normal', ...(store.settings || {}) };
 
   function save() {
     try {
@@ -70,6 +71,52 @@ const BB = (() => {
     const v = store.best[`${id}:${key}`];
     return v === undefined ? null : v;
   }
+
+  // ---------- settings ----------
+
+  const settings = {
+    get: (k) => store.settings[k],
+    set(k, v) {
+      store.settings[k] = v;
+      save();
+      applyAnimSetting();
+    },
+  };
+
+  const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /** Scales an animation duration by the user's speed setting (0 = no animation). */
+  function animMs(ms) {
+    if (reducedMotion()) return 0;
+    return { normal: 1, fast: 0.5, off: 0 }[store.settings.anim] * ms;
+  }
+
+  function applyAnimSetting() {
+    if (typeof document !== 'undefined') document.documentElement.dataset.anim = store.settings.anim;
+  }
+  applyAnimSetting();
+
+  /**
+   * Plays a movement animation on `node`: it starts at the given offsets (in px,
+   * relative to where it now is) and travels through them to its real position.
+   * `points` is a list of [dx, dy]; several points make a multi-hop path.
+   */
+  function travel(node, points, ms, easing = 'cubic-bezier(.25,.8,.25,1)') {
+    const duration = animMs(ms);
+    if (!duration || !node || !node.animate || !points.length) return Promise.resolve();
+    const frames = [...points.map(([dx, dy]) => ({ transform: `translate(${dx}px, ${dy}px)` })), { transform: 'translate(0, 0)' }];
+    const a = node.animate(frames, { duration, easing });
+    return a.finished.catch(() => {});
+  }
+
+  /** Offset of element `from` relative to element `to` (both on screen). */
+  function offset(from, to) {
+    const a = from.getBoundingClientRect();
+    const b = to.getBoundingClientRect();
+    return [a.left - b.left, a.top - b.top];
+  }
+
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // ---------- achievements ----------
 
@@ -117,7 +164,7 @@ const BB = (() => {
     if (roulette) store.counters.roulette = (store.counters.roulette || 0) + 1;
 
     let newBest = false;
-    if (typeof score === 'number') {
+    if (typeof score === 'number' && (lowerIsBetter || score > 0)) {
       const k = `${id}:${bestKey}`;
       const prev = store.best[k];
       if (prev === undefined || (lowerIsBetter ? score < prev : score > prev)) {
@@ -377,5 +424,6 @@ const BB = (() => {
     dailies, registerDaily, dailyEntry, updateDaily, streak, today, dayNumber, rng,
     achievements, defineAchievement, isUnlocked, unlockedAt: (id) => store.ach[id] || null,
     el, segmented, squareGrid, onSwipe, onArrowKeys, shuffle, formatTime, onlineGame,
+    settings, animMs, travel, offset, wait,
   };
 })();

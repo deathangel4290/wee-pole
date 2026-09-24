@@ -34,8 +34,8 @@ BB.registerDaily({
     const lineEl = el('div', { class: 'puzzle-line', 'aria-live': 'polite' });
     const entry = () => BB.dailyEntry(opts.daily.date).puzzle || { tries: 0, done: false };
 
-    function render() {
-      view.render({ state, selected, legal, lastMove, flip: attacker === 'b' });
+    function render(animate = false) {
+      view.render({ state, selected, legal, lastMove, flip: attacker === 'b', animate: animate ? lastMove : null });
       lineEl.textContent = line.join('  ');
     }
 
@@ -72,7 +72,7 @@ BB.registerDaily({
       lastMove = m;
       selected = -1;
       legal = E.legalMoves(state);
-      render();
+      render(true);
 
       const mated = !legal.length && E.inCheck(state);
       if (mated) { solved(); return; }
@@ -90,9 +90,9 @@ BB.registerDaily({
           lastMove = played;
           legal = E.legalMoves(state);
           locked = false;
-          render();
+          render(true);
           api.status(`Now finish it — mate in ${movesLeft}.`);
-        }, 450);
+        }, BB.animMs(750) || 200);
         return;
       }
 
