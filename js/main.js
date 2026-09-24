@@ -1,11 +1,14 @@
 'use strict';
 
 /*
- * App shell: hash routing, the home screen, the game screen and Game Roulette.
+ * App shell: hash routing, the home screen, game screens, daily challenges,
+ * the profile page and Game Roulette.
  *
  * Routes:
- *   #/            home
- *   #/play/<id>   a game
+ *   #/              home
+ *   #/play/<id>     a game
+ *   #/daily/<kind>  today's daily challenge
+ *   #/profile       stats + achievements
  */
 (() => {
   const { el } = BB;
@@ -17,29 +20,52 @@
     ['🃏', 'Cards'],
   ];
 
+  // How each game's best score is stored and shown on the profile page.
+  const BESTS = {
+    chess: [['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']].map(([k, l]) => [k, l, (v) => `${v}-move win`]),
+    reversi: [['default', 'Biggest win', (v) => `+${v}`]],
+    '2048': [['default', 'High score', (v) => v.toLocaleString()]],
+    minesweeper: [['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']].map(([k, l]) => [k, l, (v) => `${v}s`]),
+    snake: [['default', 'High score', (v) => `${v}`]],
+  };
+
   let unmountGame = null;
   let rouletteRun = null; // { id, endsAt } when a game was launched from the roulette
   let timerInterval = null;
+  let installPrompt = null; // Chrome/Android's deferred "install app" prompt
 
-  // ---------- helpers ----------
+  // ---------- toasts (queued so they don't pile up) ----------
 
-  function toast(text) {
-    const t = el('div', { class: 'toast', role: 'status' }, text);
+  const toastQueue = [];
+  let toastBusy = false;
+
+  function toast(text, kind = '') {
+    toastQueue.push([text, kind]);
+    if (!toastBusy) nextToast();
+  }
+
+  function nextToast() {
+    const item = toastQueue.shift();
+    if (!item) { toastBusy = false; return; }
+    toastBusy = true;
+    const t = el('div', { class: `toast ${item[1]}`.trim(), role: 'status' }, item[0]);
     document.body.append(t);
     requestAnimationFrame(() => t.classList.add('show'));
     setTimeout(() => {
       t.classList.remove('show');
-      setTimeout(() => t.remove(), 300);
-    }, 2200);
+      setTimeout(() => { t.remove(); nextToast(); }, 250);
+    }, item[1] === 'achievement' ? 2800 : 2000);
   }
 
-  /** Same game for everyone on a given calendar day. */
+  function announce(unlocked) {
+    for (const a of unlocked) toast(`🏆 ${a.icon} ${a.name}`, 'achievement');
+  }
+
+  // ---------- helpers ----------
+
+  /** Same featured game for everyone on a given calendar day. */
   function dailyPick() {
-    const d = new Date();
-    const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-    let h = 0;
-    for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return BB.games[h % BB.games.length];
+    return BB.games[BB.dayNumber() % BB.games.length];
   }
 
   function teardown() {
@@ -51,7 +77,76 @@
     timerInterval = null;
   }
 
+  const prettyDate = (date) => new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+
+  function header(title, icon) {
+    return el('header', { class: 'game-header' },
+      el('a', { class: 'back', href: '#/', 'aria-label': 'Back to home' }, '←'),
+      el('h1', { class: 'game-title' }, icon ? el('span', { 'aria-hidden': 'true' }, icon) : null, icon ? ' ' : null, title));
+  }
+
+  // ---------- install ----------
+
+  const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  /** "Install" nudge: a real prompt on Android/desktop Chrome, instructions on iOS, nothing once installed. */
+  function installCard() {
+    if (standalone()) return null;
+    if (installPrompt) {
+      return el('button', {
+        class: 'install', type: 'button',
+        onclick: async () => {
+          const p = installPrompt;
+          installPrompt = null;
+          p.prompt();
+          await p.userChoice.catch(() => {});
+          if (!location.hash || location.hash === '#/') renderHome();
+        },
+      }, el('strong', null, '📲 Install BOARD//BOX'), el('small', null, 'Full screen, works offline, lives on your home screen'));
+    }
+    if (isIOS()) {
+      return el('div', { class: 'install' },
+        el('strong', null, '📲 Get the app'),
+        el('small', null, 'In Safari, tap the Share button, then “Add to Home Screen”.'));
+    }
+    return null;
+  }
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installPrompt = e;
+    if (!location.hash || location.hash === '#/') renderHome();
+  });
+  window.addEventListener('appinstalled', () => {
+    installPrompt = null;
+    toast('Installed! Find BOARD//BOX on your home screen 🎉');
+  });
+
   // ---------- home ----------
+
+  function dailyCard() {
+    const date = BB.today();
+    const day = BB.dailyEntry(date);
+    const streak = BB.streak();
+    const doneCount = BB.dailies.filter((d) => day[d.kind]?.done).length;
+    return el('section', { class: 'daily-card' },
+      el('div', { class: 'daily-head' },
+        el('div', null,
+          el('div', { class: 'featured-label' }, 'DAILY CHALLENGE'),
+          el('div', { class: 'daily-date' }, `${prettyDate(date)} · ${doneCount}/${BB.dailies.length} done`)),
+        el('div', { class: `streak${streak ? ' on' : ''}`, title: 'Daily streak' }, `🔥 ${streak}`)),
+      BB.dailies.map((d) => {
+        const e = day[d.kind];
+        const summary = e && d.summary ? d.summary(e) : null;
+        return el('a', { class: `daily-row${e?.done ? ' done' : ''}`, href: `#/daily/${d.kind}` },
+          el('span', { class: 'daily-icon', 'aria-hidden': 'true' }, d.icon),
+          el('span', { class: 'daily-text' },
+            el('strong', null, d.name),
+            el('small', null, summary ? `${d.blurb} · ${summary}` : d.blurb)),
+          el('span', { class: 'daily-state' }, e?.done ? '✓' : 'Play →'));
+      }));
+  }
 
   function renderHome() {
     teardown();
@@ -60,6 +155,7 @@
 
     const pick = dailyPick();
     const { played, wins } = BB.totals();
+    const achieved = BB.achievements.filter((a) => BB.isUnlocked(a.id)).length;
 
     const featured = el('a', { class: 'featured', href: `#/play/${pick.id}` },
       el('div', { class: 'featured-label' }, "TODAY'S PICK"),
@@ -100,17 +196,107 @@
         el('p', { class: 'slogan' }, 'One app. Every game.'),
       ),
       el('main', { class: 'home' },
-        featured,
+        dailyCard(),
         roulette,
+        featured,
         el('h2', { class: 'section-title' }, 'QUICK GAMES'),
         grid,
-        el('section', { class: 'profile-strip' },
-          el('div', null, el('strong', null, String(played)), el('span', null, 'games played')),
+        el('a', { class: 'profile-strip', href: '#/profile', 'aria-label': 'Open profile' },
+          el('div', null, el('strong', null, String(played)), el('span', null, 'played')),
           el('div', null, el('strong', null, String(wins)), el('span', null, 'wins')),
-          el('div', null, el('strong', null, String(BB.games.length)), el('span', null, 'games')),
+          el('div', null, el('strong', null, `${achieved}/${BB.achievements.length}`), el('span', null, 'trophies')),
+          el('div', { class: 'profile-go' }, el('strong', null, '→'), el('span', null, 'profile')),
         ),
+        installCard(),
       ),
     );
+  }
+
+  // ---------- profile ----------
+
+  function renderProfile() {
+    teardown();
+    rouletteRun = null;
+    document.title = 'Profile · BOARD//BOX';
+
+    const { played, wins } = BB.totals();
+    let decided = 0;
+    for (const g of BB.games) {
+      const s = BB.stats(g.id);
+      decided += s.wins + s.losses + s.draws;
+    }
+    const unlocked = BB.achievements.filter((a) => BB.isUnlocked(a.id));
+
+    const tile = (value, label) => el('div', { class: 'tile' }, el('strong', null, value), el('span', null, label));
+
+    // Last 14 days of dailies.
+    const days = [];
+    for (let i = 13; i >= 0; i--) {
+      const date = BB.today(-i);
+      const e = BB.dailyEntry(date);
+      const n = BB.dailies.filter((d) => e[d.kind]?.done).length;
+      days.push(el('div', { class: `day lvl${n}`, title: `${prettyDate(date)}: ${n}/${BB.dailies.length}` },
+        el('span', null, new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'narrow' }))));
+    }
+
+    const rows = BB.games.map((g) => {
+      const s = BB.stats(g.id);
+      const bests = (BESTS[g.id] || [])
+        .map(([key, label, fmt]) => {
+          const v = BB.best(g.id, key);
+          return v === null ? null : `${label} ${fmt(v)}`;
+        })
+        .filter(Boolean);
+      return el('tr', null,
+        el('th', { scope: 'row' }, `${g.icon} ${g.name}`),
+        el('td', null, String(s.played)),
+        el('td', null, s.wins + s.losses + s.draws ? `${s.wins}–${s.losses}–${s.draws}` : '—'),
+        el('td', { class: 'bests' }, bests.join(' · ') || '—'));
+    });
+
+    const badges = BB.achievements.map((a) => {
+      const at = BB.unlockedAt(a.id);
+      return el('div', { class: `badge${at ? ' got' : ''}`, title: at ? `Unlocked ${new Date(at).toLocaleDateString()}` : 'Locked' },
+        el('span', { class: 'badge-icon', 'aria-hidden': 'true' }, at ? a.icon : '🔒'),
+        el('strong', null, a.name),
+        el('small', null, a.desc));
+    });
+
+    app.replaceChildren(
+      header('Profile', '👤'),
+      el('main', { class: 'profile' },
+        el('div', { class: 'tiles' },
+          tile(String(played), 'games played'),
+          tile(String(wins), 'wins'),
+          tile(decided ? `${Math.round((wins / decided) * 100)}%` : '—', 'win rate vs bots'),
+          tile(`🔥 ${BB.streak()}`, 'daily streak'),
+        ),
+        el('h2', { class: 'section-title' }, 'LAST 14 DAYS'),
+        el('div', { class: 'days' }, days),
+        el('h2', { class: 'section-title' }, `ACHIEVEMENTS · ${unlocked.length}/${BB.achievements.length}`),
+        el('div', { class: 'badges' }, badges),
+        el('h2', { class: 'section-title' }, 'GAMES'),
+        el('div', { class: 'table-wrap' },
+          el('table', { class: 'stats-table' },
+            el('thead', null, el('tr', null,
+              el('th', { scope: 'col' }, 'Game'),
+              el('th', { scope: 'col' }, 'Played'),
+              el('th', { scope: 'col' }, 'W–L–D'),
+              el('th', { scope: 'col' }, 'Bests'))),
+            el('tbody', null, rows))),
+        el('p', { class: 'fineprint' }, 'Progress is saved on this device.'),
+        el('button', {
+          class: 'btn danger', type: 'button',
+          onclick: () => {
+            if (!confirm('Reset all stats, dailies and achievements on this device?')) return;
+            try { localStorage.removeItem('boardbox.v1'); } catch (e) { /* ignore */ }
+            location.hash = '#/';
+            location.reload();
+          },
+        }, 'Reset progress'),
+      ),
+    );
+    window.scrollTo(0, 0);
   }
 
   // ---------- roulette ----------
@@ -173,42 +359,49 @@
     tick();
   }
 
-  // ---------- game screen ----------
+  // ---------- game + daily screens ----------
 
-  function renderGame(game) {
+  /**
+   * Mount something playable. `statsId` is the game whose stats results count
+   * towards; `daily` is set for daily challenges.
+   */
+  function renderPlayable({ title, icon, statsId, mount, daily = null }) {
     teardown();
-    document.title = `${game.name} · BOARD//BOX`;
+    document.title = `${title} · BOARD//BOX`;
 
     const status = el('div', { class: 'status', 'aria-live': 'polite' });
     const toolbar = el('div', { class: 'toolbar' });
     const stage = el('div', { class: 'stage' });
     const timer = el('div', { class: 'run-timer', hidden: true });
+    const head = header(title, icon);
+    head.append(timer);
+    if (daily) head.append(el('div', { class: 'run-timer daily-badge' }, prettyDate(daily.date)));
 
-    app.replaceChildren(
-      el('header', { class: 'game-header' },
-        el('a', { class: 'back', href: '#/', 'aria-label': 'Back to home' }, '←'),
-        el('h1', { class: 'game-title' }, el('span', { 'aria-hidden': 'true' }, game.icon), ' ', game.name),
-        timer,
-      ),
-      el('main', { class: 'game-screen' }, status, toolbar, stage),
-    );
+    app.replaceChildren(head, el('main', { class: 'game-screen' }, status, toolbar, stage));
 
-    if (rouletteRun && rouletteRun.id === game.id) startRunTimer(timer);
+    if (!daily && rouletteRun && rouletteRun.id === statsId) startRunTimer(timer);
     else rouletteRun = null;
 
     const api = {
       toolbar,
       status: (text) => { status.textContent = text; },
-      record: (result, opts) => {
-        const out = BB.record(game.id, result, opts);
-        if (out.newBest) toast('★ New best!');
+      record: (result, opts = {}) => {
+        const out = BB.record(statsId, result, { ...opts, roulette: !!rouletteRun });
+        if (out.newBest && !daily) toast('★ New best!');
+        announce(out.unlocked);
         return out;
       },
-      best: (key) => BB.best(game.id, key),
+      best: (key) => BB.best(statsId, key),
       toast,
+      daily: (fn) => {
+        if (!daily) return null;
+        const out = BB.updateDaily(daily.kind, fn, daily.date);
+        announce(out.unlocked);
+        return out.entry;
+      },
     };
 
-    unmountGame = game.mount(stage, api) || null;
+    unmountGame = mount(stage, api, daily ? { daily } : {}) || null;
     window.scrollTo(0, 0);
   }
 
@@ -233,9 +426,27 @@
   // ---------- router ----------
 
   function route() {
-    const m = location.hash.match(/^#\/play\/([\w-]+)/);
+    const hash = location.hash;
+    let m = hash.match(/^#\/play\/([\w-]+)/);
     const game = m && BB.find(m[1]);
-    if (game) renderGame(game);
+    if (game) {
+      renderPlayable({ title: game.name, icon: game.icon, statsId: game.id, mount: game.mount.bind(game) });
+      return;
+    }
+    m = hash.match(/^#\/daily\/([\w-]+)/);
+    const d = m && BB.dailies.find((x) => x.kind === m[1]);
+    if (d) {
+      const date = BB.today();
+      renderPlayable({
+        title: d.name,
+        icon: d.icon,
+        statsId: d.gameId || `daily-${d.kind}`,
+        mount: d.mount.bind(d),
+        daily: { kind: d.kind, date, seed: `boardbox:${date}:${d.kind}` },
+      });
+      return;
+    }
+    if (hash.startsWith('#/profile')) renderProfile();
     else renderHome();
   }
 

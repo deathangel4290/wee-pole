@@ -199,9 +199,9 @@ BB.register({
       if (mode === '2p') {
         api.status(a === b ? `Draw, ${tally}.` : `${name(a > b ? 1 : 2)} wins ${tally}!`);
         api.record('done');
-      } else if (a > b) { api.status(`You win ${tally}! 🎉`); api.record('win', { score: a - b }); }
-      else if (b > a) { api.status(`Bot wins ${tally}.`); api.record('loss'); }
-      else { api.status(`Draw, ${tally}.`); api.record('draw'); }
+      } else if (a > b) { api.status(`You win ${tally}! 🎉`); api.record('win', { score: a - b, level: mode }); }
+      else if (b > a) { api.status(`Bot wins ${tally}.`); api.record('loss', { level: mode }); }
+      else { api.status(`Draw, ${tally}.`); api.record('draw', { level: mode }); }
     }
 
     function reset() {

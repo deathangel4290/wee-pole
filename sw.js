@@ -2,24 +2,33 @@
 
 // Offline support: cache the app shell, serve cache-first, refresh in the background.
 // Bump VERSION whenever you add or rename a file so old caches get dropped.
-const VERSION = 'boardbox-v2';
+const VERSION = 'boardbox-v3';
 const FILES = [
   './',
   'index.html',
   'manifest.webmanifest',
   'icons/icon.svg',
+  'icons/icon-192.png',
+  'icons/icon-512.png',
+  'icons/maskable-512.png',
+  'icons/apple-touch-icon.png',
   'css/style.css',
   'js/core.js',
-  'js/main.js',
+  'js/achievements.js',
   'js/games/chess-engine.js',
+  'js/games/chess-view.js',
+  'js/games/chess-puzzles.js',
+  'js/games/chess-puzzle.js',
   'js/games/chess.js',
   'js/games/checkers.js',
   'js/games/reversi.js',
-  'js/games/tictactoe.js',
   'js/games/connect4.js',
+  'js/games/tictactoe.js',
   'js/games/g2048.js',
   'js/games/minesweeper.js',
   'js/games/snake.js',
+  'js/daily.js',
+  'js/main.js',
 ];
 
 self.addEventListener('install', (e) => {

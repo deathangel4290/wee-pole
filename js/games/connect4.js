@@ -184,9 +184,9 @@ BB.register({
       if (mode === '2p') {
         api.status(winner ? `${label(winner)} wins!` : 'Board full — draw.');
         api.record('done');
-      } else if (winner === 1) { api.status('You win! 🎉'); api.record('win'); }
-      else if (winner === 2) { api.status('Bot wins.'); api.record('loss'); }
-      else { api.status('Board full — draw.'); api.record('draw'); }
+      } else if (winner === 1) { api.status('You win! 🎉'); api.record('win', { level: mode }); }
+      else if (winner === 2) { api.status('Bot wins.'); api.record('loss', { level: mode }); }
+      else { api.status('Board full — draw.'); api.record('draw', { level: mode }); }
     }
 
     function reset() {

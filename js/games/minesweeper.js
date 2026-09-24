@@ -6,7 +6,7 @@ BB.register({
   icon: '💣',
   tagline: 'Clear the field. Don’t go boom.',
 
-  mount(stage, api) {
+  mount(stage, api, opts = {}) {
     const { el } = BB;
     const LEVELS = {
       easy: { rows: 9, cols: 9, mines: 10 },
@@ -15,11 +15,14 @@ BB.register({
     };
     const LONG_PRESS_MS = 420;
 
-    let level = 'easy';
+    const daily = opts.daily; // same board for everyone today
+
+    let level = daily ? 'medium' : 'easy';
     let cfg;
     let cells; // { mine, adj, open, flag }
     let buttons;
-    let started;
+    let laid; // mines placed
+    let started; // clock running
     let over;
     let opened;
     let flags;
@@ -48,20 +51,21 @@ BB.register({
     }
 
     // Mines are placed on the first reveal so the first tap (and its neighbours) is always safe.
-    function layMines(safe) {
+    function layMines(safe, random = Math.random) {
+      laid = true;
       const banned = new Set([safe, ...neighbours(safe)]);
-      const spots = BB.shuffle(cells.map((_, i) => i).filter((i) => !banned.has(i)));
+      const spots = BB.shuffle(cells.map((_, i) => i).filter((i) => !banned.has(i)), random);
       for (const i of spots.slice(0, cfg.mines)) cells[i].mine = true;
       cells.forEach((cell, i) => {
         cell.adj = neighbours(i).filter((n) => cells[n].mine).length;
       });
     }
 
-    function reveal(i) {
+    function reveal(i, auto = false) {
       if (over || cells[i].flag || cells[i].open) return;
-      if (!started) {
+      if (!laid) layMines(i);
+      if (!started && !auto) {
         started = true;
-        layMines(i);
         startTime = Date.now();
         tick = setInterval(updateTime, 500);
       }
@@ -137,8 +141,9 @@ BB.register({
         else if (!cell.mine && cell.flag) { buttons[i].textContent = '❌'; }
       });
       buttons[hit].classList.add('boom');
-      api.status('Boom. 💥 Tap New game to retry.');
-      api.record('loss');
+      api.status(`Boom. 💥 Tap ${daily ? 'Restart' : 'New game'} to retry.`);
+      api.record('loss', { level });
+      if (daily) api.daily((e) => { e.tries++; });
     }
 
     function win() {
@@ -150,7 +155,15 @@ BB.register({
       });
       minesEl.textContent = 0;
       api.status(`Cleared in ${secs}s! 🎉`);
-      api.record('win', { score: secs, bestKey: level, lowerIsBetter: true });
+      api.record('win', { score: secs, bestKey: level, lowerIsBetter: true, level });
+      if (daily) {
+        api.daily((e) => {
+          e.tries++;
+          e.done = true;
+          e.time = Math.min(e.time ?? Infinity, secs);
+        });
+        api.toast('Daily challenge complete ✅');
+      }
     }
 
     function onTap(i) {
@@ -163,6 +176,7 @@ BB.register({
     function build() {
       cfg = LEVELS[level];
       cells = Array.from({ length: cfg.rows * cfg.cols }, () => ({ mine: false, adj: 0, open: false, flag: false }));
+      laid = false;
       started = false;
       over = false;
       opened = 0;
@@ -200,6 +214,16 @@ BB.register({
       grid.replaceChildren(...buttons);
       minesEl.textContent = cfg.mines;
       updateTime();
+      if (daily) {
+        // Seeded layout, with a guaranteed-empty starting patch already open.
+        const random = BB.rng(daily.seed);
+        const start = Math.floor(random() * cells.length);
+        layMines(start, random);
+        reveal(start, true);
+        const t = BB.dailyEntry(daily.date).sweep?.time;
+        api.status(t ? `Today's best: ${t}s · clock starts on your first tap` : 'Same board for everyone · clock starts on your first tap');
+        return;
+      }
       const best = api.best(level);
       api.status(best === null ? 'Tap to dig · long-press to flag' : `Best (${level}): ${best}s`);
     }
@@ -214,11 +238,11 @@ BB.register({
     }, '⛏ Digging');
 
     api.toolbar.append(
-      BB.segmented([['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']], level, (l) => { level = l; build(); }),
+      ...(daily ? [] : [BB.segmented([['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']], level, (l) => { level = l; build(); })]),
       el('div', { class: 'scorebox' }, el('span', null, 'MINES'), minesEl),
       el('div', { class: 'scorebox' }, el('span', null, 'TIME'), timeEl),
       flagBtn,
-      el('button', { class: 'btn', type: 'button', onclick: build }, 'New game'),
+      el('button', { class: 'btn', type: 'button', onclick: build }, daily ? 'Restart' : 'New game'),
     );
     stage.append(grid);
     build();

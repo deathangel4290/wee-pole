@@ -399,7 +399,55 @@ const ChessEngine = (() => {
     return best;
   }
 
+  // ---------- mate search (puzzles) ----------
+
+  /** Can the side to move force checkmate within `n` of its own moves? */
+  function canMate(s, n) {
+    for (const m of legalMoves(s)) if (defenderLoses(m.next, n)) return true;
+    return false;
+  }
+
+  /**
+   * `s` is the position right after an attacker move, and `n` counts attacker moves
+   * including that one. True if the defender is mated, or every reply still loses
+   * to mate within the remaining n - 1 moves.
+   */
+  function defenderLoses(s, n) {
+    const check = inCheck(s);
+    if (n === 1 && !check) return false; // the last move has to give check to be mate
+    const replies = legalMoves(s);
+    if (!replies.length) return check; // mate (or stalemate, which doesn't count)
+    if (n === 1) return false;
+    for (const r of replies) if (!canMate(r.next, n - 1)) return false;
+    return true;
+  }
+
+  /** Moves that force mate within `n` (the puzzle solutions). */
+  function matingMoves(s, n) {
+    return legalMoves(s).filter((m) => defenderLoses(m.next, n));
+  }
+
+  /** Converts a state back to FEN. */
+  function toFEN(s) {
+    let rows = [];
+    for (let r = 0; r < 8; r++) {
+      let row = '';
+      let empty = 0;
+      for (let c = 0; c < 8; c++) {
+        const p = s.board[r * 8 + c];
+        if (!p) { empty++; continue; }
+        if (empty) { row += empty; empty = 0; }
+        row += p;
+      }
+      rows.push(row + (empty || ''));
+    }
+    const c = s.castle;
+    const castling = `${c.K ? 'K' : ''}${c.Q ? 'Q' : ''}${c.k ? 'k' : ''}${c.q ? 'q' : ''}` || '-';
+    return `${rows.join('/')} ${s.turn} ${castling} ${s.ep >= 0 ? nameOf(s.ep) : '-'} ${s.half} ${s.full}`;
+  }
+
   return {
+    canMate, defenderLoses, matingMoves, toFEN,
     fromFEN, initial, legalMoves, pseudoMoves, makeMove, inCheck, result, san, key, bestMove, colorOf, nameOf,
   };
 })();

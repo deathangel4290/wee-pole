@@ -108,9 +108,9 @@ BB.register({
         api.record('done');
         return;
       }
-      if (winner === 'X') { api.status('You win! 🎉'); api.record('win'); }
-      else if (winner === 'O') { api.status('Bot wins.'); api.record('loss'); }
-      else { api.status("Draw. Nobody's surprised."); api.record('draw'); }
+      if (winner === 'X') { api.status('You win! 🎉'); api.record('win', { level: mode }); }
+      else if (winner === 'O') { api.status('Bot wins.'); api.record('loss', { level: mode }); }
+      else { api.status("Draw. Nobody's surprised."); api.record('draw', { level: mode }); }
     }
 
     function reset() {

@@ -257,9 +257,9 @@ BB.register({
       if (mode === '2p') {
         api.status(winner ? `${name(winner)} wins!` : 'Draw — no progress in 40 moves.');
         api.record('done');
-      } else if (winner === 1) { api.status('You win! 🎉'); api.record('win'); }
-      else if (winner === 2) { api.status('Bot wins.'); api.record('loss'); }
-      else { api.status('Draw — no progress in 40 moves.'); api.record('draw'); }
+      } else if (winner === 1) { api.status('You win! 🎉'); api.record('win', { level: mode }); }
+      else if (winner === 2) { api.status('Bot wins.'); api.record('loss', { level: mode }); }
+      else { api.status('Draw — no progress in 40 moves.'); api.record('draw', { level: mode }); }
     }
 
     function reset() {

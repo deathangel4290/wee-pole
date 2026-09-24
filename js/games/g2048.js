@@ -6,10 +6,13 @@ BB.register({
   icon: '🔢',
   tagline: 'Swipe. Merge. Reach 2048.',
 
-  mount(stage, api) {
+  mount(stage, api, opts = {}) {
     const { el } = BB;
     const N = 4;
+    const daily = opts.daily; // same starting board and tile sequence for everyone today
+    const DAILY_GOAL = 512;
 
+    let random = Math.random;
     let grid;
     let score;
     let won;
@@ -30,8 +33,8 @@ BB.register({
     function spawn() {
       const empty = emptyCells();
       if (!empty.length) return null;
-      const [r, c] = empty[Math.floor(Math.random() * empty.length)];
-      grid[r][c] = Math.random() < 0.9 ? 2 : 4;
+      const [r, c] = empty[Math.floor(random() * empty.length)];
+      grid[r][c] = random() < 0.9 ? 2 : 4;
       return r * N + c;
     }
 
@@ -74,6 +77,12 @@ BB.register({
           if (k + 1 < vals.length && vals[k] === vals[k + 1]) {
             const v = vals[k] * 2;
             score += v;
+            if (daily && v === DAILY_GOAL) {
+              api.daily((e) => {
+                if (!e.done) api.toast(`${DAILY_GOAL}! Daily challenge complete ✅`);
+                e.done = true;
+              });
+            }
             if (v === 2048 && !won) {
               won = true;
               api.toast('2048! 🎉 Keep going for a high score');
@@ -100,7 +109,13 @@ BB.register({
         over = true;
         api.status(`Game over — score ${score}`);
         api.record(won ? 'win' : 'done', { score });
-        bestEl.textContent = api.best() ?? score;
+        if (daily) {
+          api.daily((e) => {
+            e.tries++;
+            e.score = Math.max(e.score || 0, score);
+          });
+        }
+        bestEl.textContent = currentBest() ?? score;
       }
     }
 
@@ -119,24 +134,29 @@ BB.register({
         }
       }
       scoreEl.textContent = score;
-      if (!over) api.status(won ? 'Past 2048 — keep going!' : 'Swipe or use arrow keys');
+      if (over) return;
+      if (daily) api.status(`Daily: reach the ${DAILY_GOAL} tile · same board for everyone`);
+      else api.status(won ? 'Past 2048 — keep going!' : 'Swipe or use arrow keys');
     }
 
+    const currentBest = () => (daily ? BB.dailyEntry(daily.date)['2048']?.score ?? null : api.best());
+
     function reset() {
+      if (daily) random = BB.rng(daily.seed);
       grid = Array.from({ length: N }, () => Array(N).fill(0));
       score = 0;
       won = false;
       over = false;
       spawn();
       spawn();
-      bestEl.textContent = api.best() ?? 0;
+      bestEl.textContent = currentBest() ?? 0;
       render();
     }
 
     api.toolbar.append(
       el('div', { class: 'scorebox' }, el('span', null, 'SCORE'), scoreEl),
-      el('div', { class: 'scorebox' }, el('span', null, 'BEST'), bestEl),
-      el('button', { class: 'btn', type: 'button', onclick: reset }, 'New game'),
+      el('div', { class: 'scorebox' }, el('span', null, daily ? 'TODAY' : 'BEST'), bestEl),
+      el('button', { class: 'btn', type: 'button', onclick: reset }, daily ? 'Restart' : 'New game'),
     );
     stage.append(board);
     reset();

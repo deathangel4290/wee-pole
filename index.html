@@ -10,15 +10,19 @@
   <title>BOARD//BOX</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div id="app"></div>
 
-  <!-- Core first, then each game registers itself, then the shell boots. -->
+  <!-- Core first, then games and dailies register themselves, then the shell boots. -->
   <script src="js/core.js"></script>
+  <script src="js/achievements.js"></script>
   <script src="js/games/chess-engine.js"></script>
+  <script src="js/games/chess-view.js"></script>
+  <script src="js/games/chess-puzzles.js"></script>
+  <script src="js/games/chess-puzzle.js"></script>
   <script src="js/games/chess.js"></script>
   <script src="js/games/checkers.js"></script>
   <script src="js/games/reversi.js"></script>
@@ -27,6 +31,7 @@
   <script src="js/games/g2048.js"></script>
   <script src="js/games/minesweeper.js"></script>
   <script src="js/games/snake.js"></script>
+  <script src="js/daily.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>
