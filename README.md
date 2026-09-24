@@ -13,10 +13,13 @@ python3 -m http.server 8000
 
 (Opening `index.html` directly also works, but offline/install support needs http(s).)
 
-## What's in it (Phase 1)
+## What's in it
 
 | Game | Modes |
 |------|-------|
+| ♟️ Chess | Bot (easy / medium / hard), 2 players. Play as White or Black. Full rules (castling, en passant, promotion picker, 50-move, repetition, insufficient material), move list, undo |
+| 🟠 Checkers | Bot (easy / medium / hard), 2 players. American rules: forced captures, multi-jumps, kings |
+| ⚫ Reversi | Bot (easy / medium / hard, solves the endgame), 2 players, legal-move hints |
 | ❌ Tic-Tac-Toe | Bot (easy / unbeatable minimax), 2 players |
 | 🔴 Connect 4 | Bot (easy / medium / hard alpha-beta search), 2 players |
 | 🔢 2048 | Swipe or arrow keys, best score |
@@ -35,12 +38,22 @@ Hub features:
 ```
 index.html              app shell + script order
 css/style.css           all styles (design tokens at the top)
-js/core.js              BB: game registry, stats, DOM + input helpers
+js/core.js              BB: game registry, stats, board grid, DOM + input helpers
 js/main.js              routing, home screen, game screen, roulette
 js/games/*.js           one file per game
+js/games/chess-engine.js  chess rules + bot, no DOM (runs in Node too)
+tests/chess-perft.js    move-generation checks against known perft counts
 sw.js                   offline cache (bump VERSION when files change)
 manifest.webmanifest    PWA install metadata
 ```
+
+## Tests
+
+```sh
+npm test   # or: node tests/chess-perft.js
+```
+
+This checks the chess engine against standard [perft](https://www.chessprogramming.org/Perft_Results) move counts. Those counts cover castling, en passant, promotion and pins. It also checks checkmate, stalemate and draw detection, move notation, and that the bot finds a mate in one.
 
 ## Adding a game
 
@@ -65,6 +78,6 @@ Then add a `<script>` tag in `index.html` and the path to `FILES` in `sw.js`. It
 
 ## Roadmap
 
-- **Phase 2**: Chess, Checkers, Reversi
+- ~~**Phase 2**: Chess, Checkers, Reversi~~ ✅
 - **Phase 3**: more bots and difficulty levels, a stats page, achievements, daily challenges
 - **Phase 4**: accounts, friends, online multiplayer, leaderboards

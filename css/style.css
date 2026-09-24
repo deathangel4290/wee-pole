@@ -423,6 +423,141 @@ a.game-card:active { transform: scale(0.97); }
   .dpad { display: none; }
 }
 
+/* ============ Shared board grid (Reversi, Checkers, Chess) ============ */
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), 1fr);
+  width: min(100%, 480px);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.sq {
+  --sq: #ecdfd0;
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background-color: var(--sq);
+  cursor: pointer;
+}
+.sq.dark { --sq: #c07a45; }
+.sq.last { background-color: color-mix(in srgb, #ffd84d 45%, var(--sq)); }
+.sq.sel { box-shadow: inset 0 0 0 3px var(--accent); }
+.sq.target { background-image: radial-gradient(circle, rgb(0 0 0 / 0.28) 17%, transparent 18%); }
+.sq.capture { background-image: radial-gradient(circle, transparent 60%, rgb(0 0 0 / 0.28) 61%, rgb(0 0 0 / 0.28) 70%, transparent 71%); }
+.sq.check { background-image: radial-gradient(circle, rgb(255 40 40 / 0.9) 0%, rgb(255 40 40 / 0.5) 45%, transparent 72%); }
+.sq.movable { box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.35); }
+
+/* ---- Reversi ---- */
+.board-grid.reversi { gap: 2px; padding: 2px; background: var(--line); }
+.reversi .sq { --sq: var(--surface); }
+.reversi .sq.last { background-color: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.reversi .sq.hint { background-image: radial-gradient(circle, color-mix(in srgb, var(--accent) 60%, transparent) 14%, transparent 15%); }
+.disc {
+  width: 78%;
+  height: 78%;
+  border-radius: 50%;
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.18);
+}
+.disc.p1 { background: var(--accent); }
+.disc.p2 { background: var(--text); }
+.disc.flip { animation: flip 0.32s ease-out; }
+.disc.placed { animation: pop 0.18s ease-out; }
+.scorebox.p1 strong { color: var(--accent); }
+
+@keyframes flip {
+  0% { transform: scaleX(1); }
+  50% { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+
+/* ---- Checkers ---- */
+.man {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 76%;
+  height: 76%;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 3px rgb(0 0 0 / 0.14), inset 0 0 0 7px rgb(255 255 255 / 0.12), 0 2px 3px rgb(0 0 0 / 0.35);
+}
+.man.p1 { background: var(--accent); }
+.man.p2 { background: #f7f7f5; }
+.man.king::after {
+  content: '♛';
+  font-size: clamp(14px, 5vw, 26px);
+  line-height: 1;
+  color: rgb(0 0 0 / 0.55);
+}
+
+/* ---- Chess ---- */
+.pc {
+  font-family: 'Segoe UI Symbol', 'Noto Sans Symbols 2', 'Noto Sans Symbols', 'DejaVu Sans', 'Apple Symbols', serif;
+  font-size: clamp(26px, 9.6vw, 48px);
+  line-height: 1;
+  pointer-events: none;
+}
+.pc.w {
+  color: #ffffff;
+  -webkit-text-stroke: 1.4px #1b1b1b;
+  paint-order: stroke fill;
+  text-shadow: 0 2px 2px rgb(0 0 0 / 0.25);
+}
+.pc.b {
+  color: #161616;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.25);
+}
+.chess .sq::before,
+.chess .sq::after {
+  position: absolute;
+  font-family: var(--mono);
+  font-size: clamp(8px, 2.3vw, 11px);
+  font-weight: 700;
+  color: rgb(0 0 0 / 0.45);
+  pointer-events: none;
+}
+.chess .sq::before { content: attr(data-rank); top: 2px; left: 3px; }
+.chess .sq::after { content: attr(data-file); bottom: 1px; right: 3px; }
+
+.move-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 2px 12px;
+  width: min(100%, 480px);
+  max-height: 110px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 8px 12px 8px 36px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+.move-list:empty { display: none; }
+.move-list li span { display: inline-block; min-width: 52px; color: var(--text); }
+
+.promo-row { display: flex; justify-content: center; gap: 10px; margin-top: 16px; }
+.promo-btn {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ecdfd0;
+  cursor: pointer;
+}
+.promo-btn:hover { box-shadow: inset 0 0 0 3px var(--accent); }
+
 /* ============ Roulette overlay ============ */
 .overlay {
   position: fixed;

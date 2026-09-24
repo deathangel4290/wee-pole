@@ -186,6 +186,28 @@ const BB = (() => {
     return () => document.removeEventListener('keydown', handler);
   }
 
+  /**
+   * A square grid of tappable cells, shared by the board games.
+   * onTap(r, c) receives display coordinates (row 0 at the top).
+   * Returns { el, at(r, c) } where at() gives the cell button.
+   */
+  function squareGrid(rows, cols, onTap, className = '') {
+    const grid = el('div', { class: `board-grid ${className}`.trim(), role: 'grid' });
+    grid.style.setProperty('--cols', cols);
+    const cells = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        cells.push(el('button', {
+          type: 'button',
+          class: `sq ${(r + c) % 2 ? 'dark' : 'light'}`,
+          onclick: () => onTap(r, c),
+        }));
+      }
+    }
+    grid.append(...cells);
+    return { el: grid, at: (r, c) => cells[r * cols + c] };
+  }
+
   function shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -201,6 +223,6 @@ const BB = (() => {
 
   return {
     games, register, find, stats, best, record, totals,
-    el, segmented, onSwipe, onArrowKeys, shuffle, formatTime,
+    el, segmented, squareGrid, onSwipe, onArrowKeys, shuffle, formatTime,
   };
 })();

@@ -13,9 +13,6 @@
   const ROULETTE_SECONDS = 5 * 60;
 
   const COMING_SOON = [
-    ['♟️', 'Chess'],
-    ['🟦', 'Checkers'],
-    ['⚫', 'Reversi'],
     ['🧠', 'Memory'],
     ['🃏', 'Cards'],
   ];

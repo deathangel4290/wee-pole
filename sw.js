@@ -2,7 +2,7 @@
 
 // Offline support: cache the app shell, serve cache-first, refresh in the background.
 // Bump VERSION whenever you add or rename a file so old caches get dropped.
-const VERSION = 'boardbox-v1';
+const VERSION = 'boardbox-v2';
 const FILES = [
   './',
   'index.html',
@@ -11,6 +11,10 @@ const FILES = [
   'css/style.css',
   'js/core.js',
   'js/main.js',
+  'js/games/chess-engine.js',
+  'js/games/chess.js',
+  'js/games/checkers.js',
+  'js/games/reversi.js',
   'js/games/tictactoe.js',
   'js/games/connect4.js',
   'js/games/g2048.js',
